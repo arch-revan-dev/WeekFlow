@@ -80,11 +80,9 @@ fun TaskItemRow(
     val today = LocalDate.now()
 
     var isExpanded by remember(task.id) { mutableStateOf(false) }
-    val hasLongContent = task.title.length > 50 ||
-        task.title.contains('\n') ||
-        !task.note.isNullOrBlank() ||
-        task.subtasks.size > 3 ||
-        task.subtasks.any { it.title.length > 40 }
+    var isTitleOverflowing by remember(task.id, task.title) { mutableStateOf(false) }
+    var isNoteOverflowing by remember(task.id, task.note) { mutableStateOf(false) }
+    val hasLongContent = isTitleOverflowing || isNoteOverflowing || task.subtasks.size > 4 || isExpanded
 
     val taskDueDate = task.parseDueDate()
     val isOverdue = taskDueDate != null && taskDueDate.isBefore(today) && !task.isCompleted
@@ -165,8 +163,13 @@ fun TaskItemRow(
                     fontWeight = FontWeight.Medium,
                     color = if (task.isCompleted) iosColors.textSecondary else iosColors.textPrimary,
                     textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
-                    maxLines = if (isExpanded) Int.MAX_VALUE else 3,
-                    overflow = TextOverflow.Ellipsis
+                    maxLines = if (isExpanded) Int.MAX_VALUE else 2,
+                    overflow = TextOverflow.Ellipsis,
+                    onTextLayout = { result ->
+                        if (!isExpanded) {
+                            isTitleOverflowing = result.hasVisualOverflow
+                        }
+                    }
                 )
 
                 // Task note if present
@@ -178,7 +181,12 @@ fun TaskItemRow(
                         lineHeight = 18.sp,
                         color = iosColors.textSecondary,
                         maxLines = if (isExpanded) Int.MAX_VALUE else 2,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        onTextLayout = { result ->
+                            if (!isExpanded) {
+                                isNoteOverflowing = result.hasVisualOverflow
+                            }
+                        }
                     )
                 }
 

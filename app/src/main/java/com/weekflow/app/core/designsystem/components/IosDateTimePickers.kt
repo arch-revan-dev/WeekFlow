@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -27,8 +26,6 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AccessTime
 import androidx.compose.material.icons.rounded.CalendarMonth
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,13 +46,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -76,7 +78,8 @@ import kotlin.math.abs
 
 /**
  * Reusable iOS-style vertical drum/wheel picker with snapping, center highlight bar,
- * haptic feedback on scroll, and tap-to-scroll on adjacent items.
+ * haptic feedback on scroll, and isolated nested scroll so hitting top/bottom bounds
+ * never scrolls the parent BottomSheet or Column.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -101,6 +104,22 @@ fun <T> IosWheelPicker(
     val flingBehavior = rememberSnapFlingBehavior(lazyListState = listState)
 
     val itemHeightPx = with(density) { itemHeight.toPx() }
+
+    // Block unconsumed vertical overscroll from leaking to parent verticalScroll / ModalBottomSheet
+    val isolateVerticalScroll = remember {
+        object : NestedScrollConnection {
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset = Offset(0f, available.y)
+
+            override suspend fun onPostFling(
+                consumed: Velocity,
+                available: Velocity
+            ): Velocity = Velocity(0f, available.y)
+        }
+    }
 
     val centerIndex by remember {
         derivedStateOf {
@@ -135,21 +154,25 @@ fun <T> IosWheelPicker(
             }
     }
 
+    val highlightBarBg = if (iosColors.isDark) Color(0xFF343438) else Color(0xFFE5E5EA)
+    val highlightBarBorder = if (iosColors.isDark) Color(0xFF48484E) else Color(0xFFD1D1D6)
+
     Box(
         modifier = modifier
-            .height(itemHeight * visibleItemsCount),
+            .height(itemHeight * visibleItemsCount)
+            .nestedScroll(isolateVerticalScroll),
         contentAlignment = Alignment.Center
     ) {
-        // Center selection highlight bar
+        // Center selection highlight bar (pure neutral iOS dark/light graphite, no pale blue tint)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(itemHeight)
                 .clip(RoundedCornerShape(10.dp))
-                .background(if (iosColors.isDark) Color(0xFF383840) else Color(0xFFE5E5EC))
+                .background(highlightBarBg)
                 .border(
                     width = 1.dp,
-                    color = IosBlue.copy(alpha = 0.45f),
+                    color = highlightBarBorder,
                     shape = RoundedCornerShape(10.dp)
                 )
         )
@@ -185,7 +208,7 @@ fun <T> IosWheelPicker(
                 ) {
                     Text(
                         text = itemLabel(items[index]),
-                        fontSize = if (isCenter) 19.sp else 15.sp,
+                        fontSize = if (isCenter) 17.sp else 14.sp,
                         fontWeight = if (isCenter) FontWeight.Bold else FontWeight.Medium,
                         color = if (isCenter) iosColors.textPrimary else iosColors.textSecondary,
                         textAlign = TextAlign.Center,
@@ -211,8 +234,8 @@ fun IosTimePickerButton(
     val haptic = LocalHapticFeedback.current
     var showDialog by remember { mutableStateOf(false) }
 
-    val surfaceColor = if (iosColors.isDark) Color(0xFF26262C) else Color(0xFFF2F2F7)
-    val borderColor = if (iosColors.isDark) Color(0xFF3E3E46) else Color(0xFFD8D8E0)
+    val surfaceColor = if (iosColors.isDark) Color(0xFF2C2C2E) else Color(0xFFF2F2F7)
+    val borderColor = if (iosColors.isDark) Color(0xFF3A3A3C) else Color(0xFFE5E5EA)
 
     Box(
         modifier = modifier
@@ -239,7 +262,7 @@ fun IosTimePickerButton(
                 Icon(
                     imageVector = Icons.Rounded.AccessTime,
                     contentDescription = null,
-                    tint = IosBlue,
+                    tint = iosColors.textSecondary,
                     modifier = Modifier.size(16.dp)
                 )
                 Text(
@@ -267,6 +290,7 @@ fun IosTimePickerButton(
 
 /**
  * Dialog with vertical scrolling wheels for Hours (00..23) and Minutes (00..59).
+ * Uses tonalElevation = 0.dp so Material3 never tints the dark dialog surface pale blue.
  */
 @Composable
 fun IosWheelTimePickerDialog(
@@ -288,11 +312,17 @@ fun IosWheelTimePickerDialog(
     var selectedHour by remember { mutableIntStateOf(parsed.hour) }
     var selectedMinute by remember { mutableIntStateOf(parsed.minute) }
 
+    val dialogBg = if (iosColors.isDark) Color(0xFF1C1C1E) else Color(0xFFFFFFFF)
+    val dialogBorder = if (iosColors.isDark) Color(0xFF333336) else Color(0xFFE5E5EA)
+    val wheelCardBg = if (iosColors.isDark) Color(0xFF262629) else Color(0xFFF2F2F7)
+
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(22.dp),
-            color = iosColors.card,
-            tonalElevation = 6.dp,
+            color = dialogBg,
+            tonalElevation = 0.dp,
+            shadowElevation = 16.dp,
+            border = BorderStroke(1.dp, dialogBorder),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -309,18 +339,19 @@ fun IosWheelTimePickerDialog(
                     color = iosColors.textPrimary
                 )
 
-                // Live Digital Preview Badge
+                // Live Digital Preview Badge (clean graphite pill on dark theme)
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(10.dp))
-                        .background(IosBlue.copy(alpha = 0.14f))
-                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                        .background(wheelCardBg)
+                        .border(1.dp, dialogBorder, RoundedCornerShape(10.dp))
+                        .padding(horizontal = 18.dp, vertical = 6.dp)
                 ) {
                     Text(
                         text = String.format("%02d:%02d", selectedHour, selectedMinute),
                         fontSize = 22.sp,
                         fontWeight = FontWeight.ExtraBold,
-                        color = IosBlue
+                        color = iosColors.textPrimary
                     )
                 }
 
@@ -328,7 +359,9 @@ fun IosWheelTimePickerDialog(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp),
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(wheelCardBg)
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
@@ -397,10 +430,10 @@ fun IosWheelTimePickerDialog(
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .height(32.dp)
+                                .height(34.dp)
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(
-                                    if (isChosen) IosBlue else iosColors.cardSecondary
+                                    if (isChosen) IosBlue else wheelCardBg
                                 )
                                 .clickable {
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -470,8 +503,8 @@ fun IosDatePickerButton(
         "${DateTimeUtils.formatDateWithDay(parsedDate)} ${parsedDate.year}"
     }
 
-    val surfaceColor = if (iosColors.isDark) Color(0xFF26262C) else Color(0xFFF2F2F7)
-    val borderColor = if (iosColors.isDark) Color(0xFF3E3E46) else Color(0xFFD8D8E0)
+    val surfaceColor = if (iosColors.isDark) Color(0xFF2C2C2E) else Color(0xFFF2F2F7)
+    val borderColor = if (iosColors.isDark) Color(0xFF3A3A3C) else Color(0xFFE5E5EA)
 
     Box(
         modifier = modifier
@@ -498,7 +531,7 @@ fun IosDatePickerButton(
                 Icon(
                     imageVector = Icons.Rounded.CalendarMonth,
                     contentDescription = null,
-                    tint = IosBlue,
+                    tint = iosColors.textSecondary,
                     modifier = Modifier.size(16.dp)
                 )
                 Text(
@@ -527,6 +560,7 @@ fun IosDatePickerButton(
 /**
  * Interactive Calendar Date Picker Dialog ("календарик") with month navigation,
  * quick date pills (Today, Tomorrow, Next Monday), and selectable day cells.
+ * Uses tonalElevation = 0.dp so Material3 never tints the dark dialog surface pale blue.
  */
 @Composable
 fun IosCalendarDatePickerDialog(
@@ -546,11 +580,17 @@ fun IosCalendarDatePickerDialog(
     var selectedDate by remember { mutableStateOf(initialDate) }
     var displayedMonth by remember { mutableStateOf(YearMonth.from(initialDate)) }
 
+    val dialogBg = if (iosColors.isDark) Color(0xFF1C1C1E) else Color(0xFFFFFFFF)
+    val dialogBorder = if (iosColors.isDark) Color(0xFF333336) else Color(0xFFE5E5EA)
+    val secondaryChipBg = if (iosColors.isDark) Color(0xFF28282B) else Color(0xFFF2F2F7)
+
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(22.dp),
-            color = iosColors.card,
-            tonalElevation = 6.dp,
+            color = dialogBg,
+            tonalElevation = 0.dp,
+            shadowElevation = 16.dp,
+            border = BorderStroke(1.dp, dialogBorder),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -574,14 +614,15 @@ fun IosCalendarDatePickerDialog(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
-                            .background(IosBlue.copy(alpha = 0.14f))
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                            .background(secondaryChipBg)
+                            .border(1.dp, dialogBorder, RoundedCornerShape(8.dp))
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
                     ) {
                         Text(
                             text = DateTimeUtils.formatDateWithDay(selectedDate),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            color = IosBlue
+                            color = iosColors.textPrimary
                         )
                     }
                 }
@@ -603,7 +644,7 @@ fun IosCalendarDatePickerDialog(
                                 .weight(1f)
                                 .height(32.dp)
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(if (isSelected) IosBlue else iosColors.cardSecondary)
+                                .background(if (isSelected) IosBlue else secondaryChipBg)
                                 .clickable {
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     selectedDate = chipDate
@@ -637,7 +678,7 @@ fun IosCalendarDatePickerDialog(
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
                             contentDescription = "Предыдущий месяц",
-                            tint = IosBlue
+                            tint = iosColors.textPrimary
                         )
                     }
 
@@ -658,7 +699,7 @@ fun IosCalendarDatePickerDialog(
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
                             contentDescription = "Следующий месяц",
-                            tint = IosBlue
+                            tint = iosColors.textPrimary
                         )
                     }
                 }
@@ -683,7 +724,14 @@ fun IosCalendarDatePickerDialog(
                 val leadingEmptyCells = firstOfMonth.dayOfWeek.value - 1
                 val totalCells = ((leadingEmptyCells + daysInMonth + 6) / 7) * 7
 
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(secondaryChipBg)
+                        .padding(vertical = 6.dp, horizontal = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
                     for (week in 0 until (totalCells / 7)) {
                         Row(modifier = Modifier.fillMaxWidth()) {
                             for (dow in 0 until 7) {
@@ -704,7 +752,7 @@ fun IosCalendarDatePickerDialog(
                                             .background(
                                                 when {
                                                     isChosen -> IosBlue
-                                                    isTodayCell -> IosBlue.copy(alpha = 0.14f)
+                                                    isTodayCell -> if (iosColors.isDark) Color(0xFF3A3A3E) else Color(0xFFE5E5EA)
                                                     else -> Color.Transparent
                                                 }
                                             )

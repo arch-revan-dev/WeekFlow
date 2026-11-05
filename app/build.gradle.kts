@@ -12,13 +12,13 @@ android {
         applicationId = "com.weekflow.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 8
-        versionName = "4.1.0"
+        versionCode = 9
+        versionName = "4.1.1"
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = true
+            isMinifyEnabled = false
             isShrinkResources = false
             signingConfig = signingConfigs.getByName("debug")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

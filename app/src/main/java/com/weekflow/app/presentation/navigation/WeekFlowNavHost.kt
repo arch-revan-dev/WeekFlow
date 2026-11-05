@@ -140,6 +140,18 @@ fun WeekFlowNavHost(
     var returnSheetAfterActivity by remember { mutableStateOf<ActiveSheet?>(null) }
     var navFocusTimerTitle by remember { mutableStateOf<String?>(null) }
 
+    LaunchedEffect(
+        scheduleUiState.activePreset.id,
+        scheduleUiState.allSlots.size,
+        scheduleUiState.allTasks.size,
+        scheduleUiState.preferences.isTwoWeekCycleEnabled,
+        scheduleUiState.preferences.invertWeekCycle
+    ) {
+        try {
+            WeekFlowWidgetUpdater.forceUpdateAll(context)
+        } catch (_: Exception) {}
+    }
+
     LaunchedEffect(initialAction) {
         if (initialAction == "com.weekflow.app.ACTION_ADD_TASK") {
             currentTab = NavigationTab.TASKS
@@ -362,6 +374,7 @@ fun WeekFlowNavHost(
                     defaultEndTime = sheet.defaultEndTime,
                     defaultActivityId = sheet.defaultActivityId,
                     activities = scheduleUiState.allActivities,
+                    existingSlots = scheduleUiState.allSlots,
                     isTwoWeekCycleEnabled = scheduleUiState.preferences.isTwoWeekCycleEnabled,
                     presetId = currentPresetId,
                     onDismiss = {
@@ -388,11 +401,13 @@ fun WeekFlowNavHost(
                 val slot = scheduleUiState.rawAllSlots.firstOrNull { it.id == sheet.slotId }
                 if (slot != null) {
                     val slotActivities = scheduleUiState.rawAllActivities.filter { it.presetId == slot.presetId }
+                    val slotSlots = scheduleUiState.rawAllSlots.filter { it.presetId == slot.presetId }
                     SlotEditorSheet(
                         initialSlot = slot,
                         defaultDayOfWeek = slot.dayOfWeek,
                         defaultActivityId = sheet.defaultActivityId,
                         activities = slotActivities,
+                        existingSlots = slotSlots,
                         isTwoWeekCycleEnabled = scheduleUiState.preferences.isTwoWeekCycleEnabled,
                         presetId = slot.presetId,
                         onDismiss = {

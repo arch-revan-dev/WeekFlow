@@ -65,7 +65,123 @@ import com.weekflow.app.domain.model.Activity
 import com.weekflow.app.domain.model.SchedulePreset
 import com.weekflow.app.domain.model.Slot
 import com.weekflow.app.domain.model.WeekCycle
+import java.time.Duration
+import java.time.LocalTime
 import java.util.UUID
+
+private fun resolveLessonTimesForPeriod(
+    targetPeriod: Int,
+    targetDayOfWeek: Int,
+    existingSlots: List<Slot>,
+    fallbackPresets: List<Pair<String, String>>
+): Pair<String, String> {
+    if (targetPeriod <= 0) {
+        return Pair("15:00", "16:30")
+    }
+
+    val numberedSlots = existingSlots.filter { it.periodOrder > 0 }
+    if (numberedSlots.isEmpty()) {
+        return fallbackPresets.getOrElse(targetPeriod - 1) {
+            val baseStartMin = 8 * 60 + 30 + (targetPeriod - 1) * 55
+            val start = LocalTime.of((baseStartMin / 60) % 24, baseStartMin % 60)
+            val end = start.plusMinutes(45)
+            String.format("%02d:%02d", start.hour, start.minute) to String.format("%02d:%02d", end.hour, end.minute)
+        }
+    }
+
+    // 1. Exact match on the same day of week
+    val exactDayMatch = numberedSlots.firstOrNull {
+        it.dayOfWeek == targetDayOfWeek && it.periodOrder == targetPeriod
+    }
+    if (exactDayMatch != null) {
+        return exactDayMatch.startTime to exactDayMatch.endTime
+    }
+
+    // 2. Exact match for this periodOrder on any other day of week (take most frequent time pair)
+    val samePeriodAcrossDays = numberedSlots.filter { it.periodOrder == targetPeriod }
+    if (samePeriodAcrossDays.isNotEmpty()) {
+        val mostCommonPair = samePeriodAcrossDays
+            .groupingBy { it.startTime to it.endTime }
+            .eachCount()
+            .maxByOrNull { it.value }
+            ?.key
+        if (mostCommonPair != null) {
+            return mostCommonPair
+        }
+    }
+
+    // 3. Infer typical lesson duration & break duration from existing schedule
+    val durations = numberedSlots.mapNotNull { slot ->
+        val mins = Duration.between(slot.parseStartTime(), slot.parseEndTime()).toMinutes().toInt()
+        mins.takeIf { it in 20..240 }
+    }
+    val lessonDurationMin = durations
+        .groupingBy { it }
+        .eachCount()
+        .maxByOrNull { it.value }
+        ?.key
+        ?: 45
+
+    val breaks = mutableListOf<Int>()
+    numberedSlots.groupBy { it.dayOfWeek }.values.forEach { dayList ->
+        val sortedByPeriod = dayList.sortedBy { it.periodOrder }.distinctBy { it.periodOrder }
+        for (i in 0 until sortedByPeriod.size - 1) {
+            val cur = sortedByPeriod[i]
+            val next = sortedByPeriod[i + 1]
+            if (next.periodOrder == cur.periodOrder + 1) {
+                val gap = Duration.between(cur.parseEndTime(), next.parseStartTime()).toMinutes().toInt()
+                if (gap in 0..90) {
+                    breaks.add(gap)
+                }
+            }
+        }
+    }
+    val breakDurationMin = breaks
+        .groupingBy { it }
+        .eachCount()
+        .maxByOrNull { it.value }
+        ?.key
+        ?: if (lessonDurationMin <= 50) 10 else 15
+
+    // Find closest preceding lesson (prefer same day, then any day)
+    val dayPreceding = numberedSlots
+        .filter { it.dayOfWeek == targetDayOfWeek && it.periodOrder < targetPeriod }
+        .maxByOrNull { it.periodOrder }
+    val anyPreceding = numberedSlots
+        .filter { it.periodOrder < targetPeriod }
+        .maxByOrNull { it.periodOrder }
+    val anchorBefore = if (dayPreceding != null && (anyPreceding == null || dayPreceding.periodOrder >= anyPreceding.periodOrder)) {
+        dayPreceding
+    } else {
+        anyPreceding ?: dayPreceding
+    }
+
+    if (anchorBefore != null) {
+        val steps = (targetPeriod - anchorBefore.periodOrder).coerceAtLeast(1)
+        val anchorEnd = anchorBefore.parseEndTime()
+        val offsetToStartMin = breakDurationMin.toLong() + (steps - 1L) * (lessonDurationMin + breakDurationMin).toLong()
+        val newStart = anchorEnd.plusMinutes(offsetToStartMin)
+        val newEnd = newStart.plusMinutes(lessonDurationMin.toLong())
+        return String.format("%02d:%02d", newStart.hour, newStart.minute) to
+            String.format("%02d:%02d", newEnd.hour, newEnd.minute)
+    }
+
+    // Find closest succeeding lesson if targetPeriod is before all existing lessons
+    val anchorAfter = numberedSlots
+        .filter { it.periodOrder > targetPeriod }
+        .minByOrNull { it.periodOrder }
+    if (anchorAfter != null) {
+        val steps = (anchorAfter.periodOrder - targetPeriod).coerceAtLeast(1)
+        val anchorStart = anchorAfter.parseStartTime()
+        val offsetBackMin = steps.toLong() * (lessonDurationMin + breakDurationMin).toLong()
+        val newStart = anchorStart.minusMinutes(offsetBackMin)
+        val newEnd = newStart.plusMinutes(lessonDurationMin.toLong())
+        return String.format("%02d:%02d", newStart.hour, newStart.minute) to
+            String.format("%02d:%02d", newEnd.hour, newEnd.minute)
+    }
+
+    return Pair("09:00", "10:35")
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -84,6 +200,7 @@ fun SlotEditorSheet(
     defaultStartTime: String? = null,
     defaultEndTime: String? = null,
     defaultActivityId: String? = null,
+    existingSlots: List<Slot> = emptyList(),
     presetId: String = SchedulePreset.DEFAULT_ID,
     modifier: Modifier = Modifier
 ) {
@@ -92,7 +209,7 @@ fun SlotEditorSheet(
     val appProfile = LocalAppProfile.current
     val haptic = LocalHapticFeedback.current
 
-    // Standard bell time presets for quick selection (1..7 period)
+    // Standard bell time presets for fallback when schedule is completely empty
     val timePresets = listOf(
         Pair("09:00", "10:35"),
         Pair("10:45", "12:20"),
@@ -103,9 +220,26 @@ fun SlotEditorSheet(
         Pair("20:00", "21:35")
     )
 
-    val initialPeriod = initialSlot?.periodOrder ?: defaultPeriodOrder ?: 1
-    val defaultTimesForPeriod = timePresets.getOrElse((initialPeriod - 1).coerceIn(0, timePresets.lastIndex)) {
-        Pair("09:00", "10:35")
+    val initialPeriod = remember(initialSlot?.id, defaultPeriodOrder, defaultDayOfWeek, existingSlots.size) {
+        when {
+            initialSlot != null -> initialSlot.periodOrder
+            defaultPeriodOrder != null -> defaultPeriodOrder
+            defaultStartTime != null -> 1
+            else -> {
+                val maxOnDay = existingSlots
+                    .filter { it.dayOfWeek == defaultDayOfWeek && it.periodOrder > 0 }
+                    .maxOfOrNull { it.periodOrder } ?: 0
+                (maxOnDay + 1).coerceIn(1, 20)
+            }
+        }
+    }
+    val defaultTimesForPeriod = remember(initialPeriod, defaultDayOfWeek, existingSlots) {
+        resolveLessonTimesForPeriod(
+            targetPeriod = initialPeriod,
+            targetDayOfWeek = initialSlot?.dayOfWeek ?: defaultDayOfWeek,
+            existingSlots = existingSlots,
+            fallbackPresets = timePresets
+        )
     }
 
     var selectedActivityId by remember(initialSlot?.id, defaultActivityId) {
@@ -310,6 +444,16 @@ fun SlotEditorSheet(
                             .clickable {
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 dayOfWeek = day
+                                if (initialSlot == null && periodOrder > 0) {
+                                    val resolved = resolveLessonTimesForPeriod(
+                                        targetPeriod = periodOrder,
+                                        targetDayOfWeek = day,
+                                        existingSlots = existingSlots,
+                                        fallbackPresets = timePresets
+                                    )
+                                    startTime = resolved.first
+                                    endTime = resolved.second
+                                }
                             },
                         contentAlignment = Alignment.Center
                     ) {
@@ -390,22 +534,24 @@ fun SlotEditorSheet(
                             periodOrder = num
                             lastNumberedPeriod = num
                             periodOrderText = num.toString()
-                            if (num - 1 in timePresets.indices) {
-                                val preset = timePresets[num - 1]
-                                startTime = preset.first
-                                endTime = preset.second
-                            } else {
-                                val baseStartMin = 8 * 60 + 30 + (num - 1) * 60
-                                val startH = (baseStartMin / 60) % 24
-                                val startM = baseStartMin % 60
-                                val endMin = baseStartMin + 45
-                                val endH = (endMin / 60) % 24
-                                val endM = endMin % 60
-                                startTime = String.format("%02d:%02d", startH, startM)
-                                endTime = String.format("%02d:%02d", endH, endM)
-                            }
+                            val resolved = resolveLessonTimesForPeriod(
+                                targetPeriod = num,
+                                targetDayOfWeek = dayOfWeek,
+                                existingSlots = existingSlots,
+                                fallbackPresets = timePresets
+                            )
+                            startTime = resolved.first
+                            endTime = resolved.second
                         },
-                        itemLabel = { num -> "$num $itemWord" },
+                        itemLabel = { num ->
+                            val (s, e) = resolveLessonTimesForPeriod(
+                                targetPeriod = num,
+                                targetDayOfWeek = dayOfWeek,
+                                existingSlots = existingSlots,
+                                fallbackPresets = timePresets
+                            )
+                            "$num $itemWord  •  $s – $e"
+                        },
                         visibleItemsCount = 3,
                         itemHeight = 38.dp,
                         modifier = Modifier.fillMaxWidth()

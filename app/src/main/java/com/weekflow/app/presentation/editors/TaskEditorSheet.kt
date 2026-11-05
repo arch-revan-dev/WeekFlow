@@ -581,19 +581,43 @@ fun TaskEditorSheet(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(
-                    text = "Выбрать дату сдачи вручную",
-                    fontSize = 14.sp,
-                    color = iosColors.textPrimary
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Выбрать дату сдачи вручную",
+                        fontSize = 14.sp,
+                        color = iosColors.textPrimary
+                    )
+                    if (!isManualDateOverride) {
+                        val autoDate = runCatching { LocalDate.parse(dueDateIso) }.getOrNull()
+                        if (autoDate != null) {
+                            Text(
+                                text = "Авто: ${DateTimeUtils.formatDateWithDay(autoDate)}",
+                                fontSize = 12.sp,
+                                color = iosColors.textSecondary
+                            )
+                        }
+                    }
+                }
                 Switch(
                     checked = isManualDateOverride,
-                    onCheckedChange = { isManualDateOverride = it },
+                    onCheckedChange = { enabled ->
+                        isManualDateOverride = enabled
+                        if (!enabled) {
+                            // Return to automatic smart date based on current / last lesson
+                            val match = smartLessonMatch
+                            if (match != null && selectedActivityId != null) {
+                                dueDateIso = match.dueDate.toString()
+                                linkedSlotId = match.linkedSlotId
+                            } else if (initialTask == null) {
+                                dueDateIso = referenceDate.toString()
+                            }
+                        }
+                    },
                     colors = iosSwitchColors()
                 )
             }
 
-            AnimatedVisibility(visible = isManualDateOverride || selectedActivityId == null) {
+            AnimatedVisibility(visible = isManualDateOverride) {
                 IosDatePickerButton(
                     label = "Срок сдачи задачи",
                     dateIso = dueDateIso,

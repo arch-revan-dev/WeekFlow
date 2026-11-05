@@ -42,6 +42,7 @@ class MainActivity : ComponentActivity() {
 
         lifecycleScope.launch {
             try {
+                WeekFlowWidgetUpdater.forceUpdateAll(applicationContext)
                 notificationScheduler.rescheduleAllNotifications()
             } catch (_: Exception) {}
         }
@@ -72,6 +73,7 @@ class MainActivity : ComponentActivity() {
 
         lifecycleScope.launch {
             try {
+                WeekFlowWidgetUpdater.forceUpdateAll(applicationContext)
                 notificationScheduler.rescheduleAllNotifications()
             } catch (_: Exception) {}
         }
