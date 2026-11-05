@@ -3,13 +3,12 @@ package com.weekflow.app.presentation.schedule.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -31,7 +30,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -47,9 +47,9 @@ import com.weekflow.app.domain.model.Activity
 import com.weekflow.app.domain.model.CalendarEvent
 import com.weekflow.app.domain.model.Slot
 import com.weekflow.app.domain.model.WeekCycle
-import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalTime
+import kotlin.math.roundToInt
 
 private data class TimelineRenderItem(
     val id: String,
@@ -81,13 +81,10 @@ fun TimelineGridView(
     val iosColors = LocalIosColors.current
     val haptic = LocalHapticFeedback.current
     val density = LocalDensity.current
-    val activityMap = activities.associateBy { it.id }
+    val activityMap = remember(activities) { activities.associateBy { it.id } }
 
     // Full 24 Hours: 00:00 to 23:00
-    val startHour = 0
-    val endHour = 23
     val hoursCount = 24
-
     var hourHeightDpVal by remember { mutableFloatStateOf(80f) }
     val hourHeightDp = hourHeightDpVal.dp
     val timeColWidth = 54.dp
@@ -95,18 +92,19 @@ fun TimelineGridView(
     val now = LocalTime.now()
     val isToday = selectedDate == LocalDate.now()
 
-    // Filter slots for selectedDate
-    val daySlots = slots.filter { slot ->
-        slot.dayOfWeek == selectedDate.dayOfWeek.value &&
-            (!isTwoWeekCycleEnabled ||
-                slot.weekCycle == WeekCycle.EVERY_WEEK ||
-                slot.weekCycle == activeWeekCycle)
+    val daySlots = remember(slots, selectedDate, isTwoWeekCycleEnabled, activeWeekCycle) {
+        slots.filter { slot ->
+            slot.dayOfWeek == selectedDate.dayOfWeek.value &&
+                (!isTwoWeekCycleEnabled ||
+                    slot.weekCycle == WeekCycle.EVERY_WEEK ||
+                    slot.weekCycle == activeWeekCycle)
+        }
     }
 
-    // Filter events for selectedDate
-    val dayEvents = events.filter { it.dateIso == selectedDate.toString() && !it.isAllDay }
+    val dayEvents = remember(events, selectedDate) {
+        events.filter { it.dateIso == selectedDate.toString() && !it.isAllDay }
+    }
 
-    // Convert both into unified timeline items
     val renderItems = remember(daySlots, dayEvents) {
         val list = mutableListOf<TimelineRenderItem>()
 
@@ -143,13 +141,10 @@ fun TimelineGridView(
         list.sortedWith(compareBy({ it.startMinutes }, { -(it.endMinutes - it.startMinutes) }))
     }
 
-    // Assign parallel columns for overlapping items (Side-by-side layout)
     val positionedItems = remember(renderItems) {
         if (renderItems.isEmpty()) return@remember emptyList<PositionedRenderItem>()
 
         val result = mutableListOf<PositionedRenderItem>()
-
-        // Cluster items that overlap
         val clusters = mutableListOf<MutableList<TimelineRenderItem>>()
         var currentCluster = mutableListOf<TimelineRenderItem>()
         var clusterEnd = -1
@@ -171,7 +166,6 @@ fun TimelineGridView(
             clusters.add(currentCluster)
         }
 
-        // Layout columns in each cluster
         for (cluster in clusters) {
             val columnEndTimes = mutableListOf<Int>()
             val clusterPositions = mutableListOf<Pair<TimelineRenderItem, Int>>()
@@ -203,24 +197,24 @@ fun TimelineGridView(
 
     val scrollState = rememberScrollState()
 
-    // Auto-scroll to 07:30 or first lesson on launch
     LaunchedEffect(selectedDate) {
         val firstStart = renderItems.minOfOrNull { it.startMinutes } ?: (7 * 60 + 30)
         val targetMin = (firstStart - 30).coerceIn(0, 24 * 60)
         val targetPx = with(density) {
-            ((targetMin.toFloat() / 60f) * hourHeightDp.value).dp.toPx()
+            ((targetMin.toFloat() / 60f) * hourHeightDpVal).dp.toPx()
         }.toInt()
         scrollState.scrollTo(targetPx)
     }
+
+    val separatorColor = iosColors.separator
+    val totalHeightDp = (hourHeightDpVal * hoursCount + 48f).dp
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(iosColors.background)
-            .pointerInput(Unit) {
-                detectTransformGestures { _, _, zoom, _ ->
-                    hourHeightDpVal = (hourHeightDpVal * zoom).coerceIn(40f, 240f)
-                }
+            .twoFingerPinchZoom { zoom ->
+                hourHeightDpVal = (hourHeightDpVal * zoom).coerceIn(44f, 220f)
             }
     ) {
         BoxWithConstraints(
@@ -230,179 +224,126 @@ fun TimelineGridView(
         ) {
             val availableWidth = (maxWidth - timeColWidth - 14.dp).coerceAtLeast(100.dp)
 
-            // 1. Adaptive 15-Minute / 30-Minute / 60-Minute Grid Lines & Labels
-            Column(modifier = Modifier.fillMaxWidth()) {
-                for (hour in startHour..endHour) {
-                    when {
-                        // High zoom (> 135.dp): full 15-minute grid
-                        hourHeightDpVal > 135f -> {
-                            val subHeight = hourHeightDp / 4
-                            listOf(
-                                0 to (0.7f to 12),
-                                15 to (0.25f to 9),
-                                30 to (0.4f to 10),
-                                45 to (0.25f to 9)
-                            ).forEach { (minute, meta) ->
-                                val (lineAlpha, fontSp) = meta
-                                val isHourStart = minute == 0
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(subHeight),
-                                    verticalAlignment = Alignment.Top
-                                ) {
-                                    Text(
-                                        text = String.format("%02d:%02d", hour, minute),
-                                        fontSize = fontSp.sp,
-                                        fontWeight = if (isHourStart) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (isHourStart) iosColors.textPrimary else iosColors.textSecondary.copy(alpha = if (minute == 30) 0.8f else 0.6f),
-                                        modifier = Modifier
-                                            .width(timeColWidth)
-                                            .padding(start = 8.dp, top = 1.dp)
-                                    )
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .height(0.5.dp)
-                                            .background(iosColors.separator.copy(alpha = lineAlpha))
-                                    )
-                                }
-                            }
-                        }
+            // 1. Hardware-accelerated Canvas Grid + Single Tap Gesture Detector
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(totalHeightDp)
+                    .drawBehind {
+                        val hourPx = hourHeightDp.toPx()
+                        val startX = timeColWidth.toPx()
+                        val endX = size.width
+                        val strokePx = 0.7.dp.toPx()
 
-                        // Medium zoom (75.dp..135.dp): 30-minute intervals
-                        hourHeightDpVal in 75f..135f -> {
-                            val subHeight = hourHeightDp / 2
-                            listOf(
-                                0 to (0.7f to 12),
-                                30 to (0.4f to 10)
-                            ).forEach { (minute, meta) ->
-                                val (lineAlpha, fontSp) = meta
-                                val isHourStart = minute == 0
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(subHeight),
-                                    verticalAlignment = Alignment.Top
-                                ) {
-                                    Text(
-                                        text = String.format("%02d:%02d", hour, minute),
-                                        fontSize = fontSp.sp,
-                                        fontWeight = if (isHourStart) FontWeight.Medium else FontWeight.Normal,
-                                        color = if (isHourStart) iosColors.textPrimary else iosColors.textSecondary.copy(alpha = 0.7f),
-                                        modifier = Modifier
-                                            .width(timeColWidth)
-                                            .padding(start = 8.dp, top = 2.dp)
-                                    )
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .height(0.5.dp)
-                                            .background(iosColors.separator.copy(alpha = lineAlpha))
-                                    )
-                                }
-                            }
-                        }
-
-                        // Low zoom (< 75.dp): whole hours only
-                        else -> {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(hourHeightDp),
-                                verticalAlignment = Alignment.Top
-                            ) {
-                                Text(
-                                    text = String.format("%02d:00", hour),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = iosColors.textSecondary,
-                                    modifier = Modifier
-                                        .width(timeColWidth)
-                                        .padding(start = 8.dp, top = 2.dp)
+                        for (hour in 0 until hoursCount) {
+                            val yHour = hour * hourPx
+                            drawLine(
+                                color = separatorColor.copy(alpha = 0.65f),
+                                start = Offset(startX, yHour),
+                                end = Offset(endX, yHour),
+                                strokeWidth = strokePx
+                            )
+                            if (hourHeightDpVal >= 75f) {
+                                val yHalf = yHour + hourPx * 0.5f
+                                drawLine(
+                                    color = separatorColor.copy(alpha = 0.35f),
+                                    start = Offset(startX, yHalf),
+                                    end = Offset(endX, yHalf),
+                                    strokeWidth = strokePx
                                 )
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(0.5.dp)
-                                        .background(iosColors.separator.copy(alpha = 0.5f))
+                            }
+                            if (hourHeightDpVal > 135f) {
+                                val yQ1 = yHour + hourPx * 0.25f
+                                val yQ3 = yHour + hourPx * 0.75f
+                                drawLine(
+                                    color = separatorColor.copy(alpha = 0.20f),
+                                    start = Offset(startX, yQ1),
+                                    end = Offset(endX, yQ1),
+                                    strokeWidth = strokePx
+                                )
+                                drawLine(
+                                    color = separatorColor.copy(alpha = 0.20f),
+                                    start = Offset(startX, yQ3),
+                                    end = Offset(endX, yQ3),
+                                    strokeWidth = strokePx
                                 )
                             }
                         }
                     }
-                }
-                Spacer(modifier = Modifier.height(24.dp))
-            }
-
-            // 2. Clickable empty areas for adding events/slots matching the active LOD
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = timeColWidth, end = 12.dp)
-            ) {
-                for (hour in startHour..endHour) {
-                    when {
-                        hourHeightDpVal > 135f -> {
-                            val subHeight = hourHeightDp / 4
-                            listOf(0, 15, 30, 45).forEach { minute ->
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(subHeight)
-                                        .clickable {
-                                            val startStr = String.format("%02d:%02d", hour, minute)
-                                            val endMinTotal = minute + 45
-                                            val endHourCalc = (hour + endMinTotal / 60) % 24
-                                            val endMinCalc = endMinTotal % 60
-                                            val endStr = String.format("%02d:%02d", endHourCalc, endMinCalc)
-                                            onAddSlotWithTime(startStr, endStr)
-                                        }
-                                )
+                    .pointerInput(hourHeightDpVal) {
+                        detectTapGestures { offset ->
+                            val hourPx = hourHeightDp.toPx()
+                            if (hourPx <= 0f) return@detectTapGestures
+                            val rawMinutes = ((offset.y / hourPx) * 60f).toInt().coerceIn(0, 23 * 60 + 45)
+                            val step = when {
+                                hourHeightDpVal > 135f -> 15
+                                hourHeightDpVal >= 75f -> 30
+                                else -> 60
                             }
-                        }
-
-                        hourHeightDpVal in 75f..135f -> {
-                            val subHeight = hourHeightDp / 2
-                            listOf(0, 30).forEach { minute ->
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(subHeight)
-                                        .clickable {
-                                            val startStr = String.format("%02d:%02d", hour, minute)
-                                            val endMinTotal = minute + 45
-                                            val endHourCalc = (hour + endMinTotal / 60) % 24
-                                            val endMinCalc = endMinTotal % 60
-                                            val endStr = String.format("%02d:%02d", endHourCalc, endMinCalc)
-                                            onAddSlotWithTime(startStr, endStr)
-                                        }
-                                )
-                            }
-                        }
-
-                        else -> {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(hourHeightDp)
-                                    .clickable {
-                                        val startStr = String.format("%02d:00", hour)
-                                        val endStr = String.format("%02d:45", hour)
-                                        onAddSlotWithTime(startStr, endStr)
-                                    }
+                            val snappedMinutes = (rawMinutes / step) * step
+                            val startH = (snappedMinutes / 60).coerceIn(0, 23)
+                            val startM = snappedMinutes % 60
+                            val endTotal = (snappedMinutes + 45).coerceAtMost(23 * 60 + 59)
+                            val endH = endTotal / 60
+                            val endM = endTotal % 60
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onAddSlotWithTime(
+                                String.format("%02d:%02d", startH, startM),
+                                String.format("%02d:%02d", endH, endM)
                             )
                         }
                     }
+            ) {
+                // Time labels along the left column
+                for (hour in 0 until hoursCount) {
+                    val yHourDp = (hour * hourHeightDpVal).dp
+                    Text(
+                        text = String.format("%02d:00", hour),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = iosColors.textPrimary,
+                        modifier = Modifier
+                            .offset(x = 8.dp, y = yHourDp + 1.dp)
+                            .width(timeColWidth - 8.dp)
+                    )
+                    if (hourHeightDpVal >= 85f) {
+                        Text(
+                            text = String.format("%02d:30", hour),
+                            fontSize = 9.5.sp,
+                            color = iosColors.textSecondary.copy(alpha = 0.7f),
+                            modifier = Modifier
+                                .offset(x = 8.dp, y = yHourDp + (hourHeightDpVal * 0.5f).dp + 1.dp)
+                                .width(timeColWidth - 8.dp)
+                        )
+                    }
+                    if (hourHeightDpVal > 140f) {
+                        Text(
+                            text = String.format("%02d:15", hour),
+                            fontSize = 8.5.sp,
+                            color = iosColors.textSecondary.copy(alpha = 0.55f),
+                            modifier = Modifier
+                                .offset(x = 8.dp, y = yHourDp + (hourHeightDpVal * 0.25f).dp + 1.dp)
+                                .width(timeColWidth - 8.dp)
+                        )
+                        Text(
+                            text = String.format("%02d:45", hour),
+                            fontSize = 8.5.sp,
+                            color = iosColors.textSecondary.copy(alpha = 0.55f),
+                            modifier = Modifier
+                                .offset(x = 8.dp, y = yHourDp + (hourHeightDpVal * 0.75f).dp + 1.dp)
+                                .width(timeColWidth - 8.dp)
+                        )
+                    }
                 }
             }
 
-            // 3. Render Positioned Items (Slots & Events side-by-side with NO right clipping)
+            // 2. Render Positioned Items (Slots & Events side-by-side)
             positionedItems.forEach { pos ->
                 val colWidth = availableWidth / pos.totalColumns
                 val xOffset = timeColWidth + 4.dp + (colWidth * pos.columnIndex)
-                val yOffsetDp = (pos.item.startMinutes.toFloat() / 60f) * hourHeightDp.value
+                val yOffsetDp = (pos.item.startMinutes.toFloat() / 60f) * hourHeightDpVal
                 val durationMin = (pos.item.endMinutes - pos.item.startMinutes).coerceAtLeast(20)
-                val itemHeightDp = (durationMin.toFloat() / 60f) * hourHeightDp.value
+                val itemHeightDp = (durationMin.toFloat() / 60f) * hourHeightDpVal
                 val itemWidth = (colWidth - 4.dp).coerceAtLeast(40.dp)
 
                 if (pos.item.slot != null) {
@@ -502,10 +443,10 @@ fun TimelineGridView(
                 }
             }
 
-            // 4. Red Live Time Indicator Line
+            // 3. Red Live Time Indicator Line
             if (isToday) {
                 val nowMinutes = now.hour * 60 + now.minute
-                val lineYOffsetDp = (nowMinutes.toFloat() / 60f) * hourHeightDp.value
+                val lineYOffsetDp = (nowMinutes.toFloat() / 60f) * hourHeightDpVal
 
                 Box(
                     modifier = Modifier
@@ -513,7 +454,6 @@ fun TimelineGridView(
                         .fillMaxWidth()
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Red indicator circle
                         Box(
                             modifier = Modifier
                                 .offset(x = timeColWidth - 5.dp)
@@ -521,7 +461,6 @@ fun TimelineGridView(
                                 .clip(CircleShape)
                                 .background(IosRed)
                         )
-                        // Red horizontal line
                         Box(
                             modifier = Modifier
                                 .offset(x = timeColWidth - 5.dp)
@@ -533,5 +472,25 @@ fun TimelineGridView(
                 }
             }
         }
+
+        // 4. Floating Zoom Control Pill [ - | 100% | + ]
+        ZoomControlPill(
+            percentage = ((hourHeightDpVal / 80f) * 100f).roundToInt(),
+            onZoomOut = {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                hourHeightDpVal = (hourHeightDpVal - 16f).coerceIn(44f, 220f)
+            },
+            onReset = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                hourHeightDpVal = 80f
+            },
+            onZoomIn = {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                hourHeightDpVal = (hourHeightDpVal + 16f).coerceIn(44f, 220f)
+            },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 14.dp, bottom = 12.dp)
+        )
     }
 }

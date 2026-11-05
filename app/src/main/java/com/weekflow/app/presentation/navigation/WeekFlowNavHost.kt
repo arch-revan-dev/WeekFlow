@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.weekflow.app.core.designsystem.IosBlue
 import com.weekflow.app.core.designsystem.LocalIosColors
+import com.weekflow.app.core.designsystem.components.FocusTimerDialog
 import com.weekflow.app.core.localization.LocalAppProfile
 import com.weekflow.app.core.notifications.NotificationScheduler
 import com.weekflow.app.domain.model.Activity
@@ -65,6 +66,7 @@ import com.weekflow.app.presentation.calendar.CalendarViewModel
 import com.weekflow.app.presentation.editors.ActivityEditorSheet
 import com.weekflow.app.presentation.editors.EventEditorSheet
 import com.weekflow.app.presentation.editors.SlotEditorSheet
+import com.weekflow.app.presentation.editors.TaskDetailSheet
 import com.weekflow.app.presentation.editors.TaskEditorSheet
 import com.weekflow.app.presentation.schedule.ScheduleScreen
 import com.weekflow.app.presentation.schedule.ScheduleViewModel
@@ -100,6 +102,7 @@ sealed interface ActiveSheet {
     ) : ActiveSheet
     data class EditSlot(val slotId: String, val defaultActivityId: String? = null) : ActiveSheet
     data class AddTask(val activityId: String?, val slotId: String?, val date: LocalDate) : ActiveSheet
+    data class ViewTask(val taskId: String, val fallbackTask: Task) : ActiveSheet
     data class EditTask(val task: Task) : ActiveSheet
     data class AddEvent(val defaultDateIso: String) : ActiveSheet
     data class EditEvent(val event: CalendarEvent) : ActiveSheet
@@ -130,10 +133,12 @@ fun WeekFlowNavHost(
     val detectActiveOrRecentActivityUseCase: DetectActiveOrRecentActivityUseCase = koinInject()
 
     val scheduleUiState by scheduleViewModel.uiState.collectAsState()
+    val tasksUiState by tasksViewModel.uiState.collectAsState()
 
     var currentTab by remember { mutableStateOf(NavigationTab.SCHEDULE) }
     var activeSheet by remember { mutableStateOf<ActiveSheet>(ActiveSheet.None) }
     var returnSheetAfterActivity by remember { mutableStateOf<ActiveSheet?>(null) }
+    var navFocusTimerTitle by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(initialAction) {
         if (initialAction == "com.weekflow.app.ACTION_ADD_TASK") {
@@ -274,7 +279,7 @@ fun WeekFlowNavHost(
                             },
                             onEditTask = { task ->
                                 returnSheetAfterActivity = null
-                                activeSheet = ActiveSheet.EditTask(task)
+                                activeSheet = ActiveSheet.ViewTask(task.id, task)
                             },
                             onAddNewEvent = { dateIso ->
                                 returnSheetAfterActivity = null
@@ -307,7 +312,7 @@ fun WeekFlowNavHost(
                             },
                             onEditTask = { task ->
                                 returnSheetAfterActivity = null
-                                activeSheet = ActiveSheet.EditTask(task)
+                                activeSheet = ActiveSheet.ViewTask(task.id, task)
                             }
                         )
                     }
@@ -317,6 +322,10 @@ fun WeekFlowNavHost(
                             onAddNewTask = {
                                 returnSheetAfterActivity = null
                                 activeSheet = ActiveSheet.AddTask(null, null, LocalDate.now())
+                            },
+                            onViewTask = { task ->
+                                returnSheetAfterActivity = null
+                                activeSheet = ActiveSheet.ViewTask(task.id, task)
                             },
                             onEditTask = { task ->
                                 returnSheetAfterActivity = null
@@ -439,6 +448,48 @@ fun WeekFlowNavHost(
                             scheduleRepository.upsertTask(task)
                             notifyWidgetUpdate()
                         }
+                    }
+                )
+            }
+            is ActiveSheet.ViewTask -> {
+                val liveTask = tasksUiState.rawAllTasks.firstOrNull { it.id == sheet.taskId }
+                    ?: scheduleUiState.allTasks.firstOrNull { it.id == sheet.taskId }
+                    ?: sheet.fallbackTask
+                val linkedAct = liveTask.linkedActivityId?.let { actId ->
+                    scheduleUiState.rawAllActivities.firstOrNull { it.id == actId }
+                }
+                TaskDetailSheet(
+                    task = liveTask,
+                    linkedActivity = linkedAct,
+                    onDismiss = {
+                        returnSheetAfterActivity = null
+                        activeSheet = ActiveSheet.None
+                    },
+                    onEditClick = {
+                        activeSheet = ActiveSheet.EditTask(liveTask)
+                    },
+                    onToggleCompleted = {
+                        scope.launch {
+                            scheduleRepository.toggleTaskCompleted(liveTask.id, !liveTask.isCompleted)
+                            notifyWidgetUpdate()
+                        }
+                    },
+                    onUpdateTask = { updatedTask ->
+                        scope.launch {
+                            scheduleRepository.upsertTask(updatedTask)
+                            notifyWidgetUpdate()
+                        }
+                    },
+                    onDeleteTask = {
+                        scope.launch {
+                            scheduleRepository.deleteTask(liveTask.id)
+                            notifyWidgetUpdate()
+                        }
+                        activeSheet = ActiveSheet.None
+                    },
+                    onStartFocusTimer = { title ->
+                        activeSheet = ActiveSheet.None
+                        navFocusTimerTitle = title
                     }
                 )
             }
@@ -573,6 +624,16 @@ fun WeekFlowNavHost(
                 }
             }
             ActiveSheet.None -> {}
+        }
+
+        navFocusTimerTitle?.let { timerTitle ->
+            FocusTimerDialog(
+                initialTitle = timerTitle,
+                onDismiss = { navFocusTimerTitle = null },
+                onSessionCompleted = { mins ->
+                    tasksViewModel.recordFocusSession(mins)
+                }
+            )
         }
     }
 }

@@ -88,7 +88,10 @@ import com.weekflow.app.core.designsystem.IosOrange
 import com.weekflow.app.core.designsystem.IosPurple
 import com.weekflow.app.core.designsystem.IosRed
 import com.weekflow.app.core.designsystem.LocalIosColors
+import com.weekflow.app.core.designsystem.components.IosCalendarDatePickerDialog
+import com.weekflow.app.core.designsystem.components.IosDatePickerButton
 import com.weekflow.app.core.designsystem.components.IosSegmentedControl
+import com.weekflow.app.core.designsystem.components.IosWheelTimePickerDialog
 import com.weekflow.app.core.designsystem.components.LessonSlotCard
 import com.weekflow.app.core.designsystem.iosSwitchColors
 import com.weekflow.app.core.util.ColorParser
@@ -126,6 +129,7 @@ fun SettingsScreen(
     var showThemeDialog by remember { mutableStateOf(false) }
     var showAddVacationDialog by remember { mutableStateOf(false) }
     var showSemesterDateDialog by remember { mutableStateOf(false) }
+    var showEveningTimeDialog by remember { mutableStateOf(false) }
     var showPresetSheet by remember { mutableStateOf(false) }
 
     if (showPresetSheet) {
@@ -513,10 +517,18 @@ fun SettingsScreen(
                         SettingsDivider()
                         SettingsSwitchRow(
                             label = "Вечерняя сводка на завтра",
-                            sublabel = "Уведомление с расписанием на завтра в 20:00",
+                            sublabel = "Уведомление с расписанием на завтра в ${uiState.preferences.eveningSummaryTime}",
                             checked = uiState.preferences.eveningSummaryEnabled,
                             onCheckedChange = { viewModel.onToggleEveningSummary(it) }
                         )
+                        if (uiState.preferences.eveningSummaryEnabled) {
+                            SettingsDivider()
+                            SettingsRow(
+                                label = "Время вечерней сводки",
+                                value = uiState.preferences.eveningSummaryTime,
+                                onClick = { showEveningTimeDialog = true }
+                            )
+                        }
 
                         SettingsDivider()
                         SettingsSwitchRow(
@@ -878,86 +890,28 @@ fun SettingsScreen(
         )
     }
 
-    // Modal Semester Start Date Dialog
-    if (showSemesterDateDialog) {
-        val currentYear = remember { LocalDate.now().year }
-        val thisMondayIso = remember {
-            LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)).toString()
-        }
-        var dateInput by remember { mutableStateOf(uiState.preferences.semesterStartDateIso) }
+    // Modal Evening Summary Time Wheel Dialog
+    if (showEveningTimeDialog) {
+        IosWheelTimePickerDialog(
+            title = "Время вечерней сводки",
+            initialTime = uiState.preferences.eveningSummaryTime,
+            onDismiss = { showEveningTimeDialog = false },
+            onConfirm = { newTime ->
+                viewModel.onEveningSummaryTimeChanged(newTime)
+                showEveningTimeDialog = false
+            }
+        )
+    }
 
-        AlertDialog(
-            onDismissRequest = { showSemesterDateDialog = false },
-            title = { Text("Дата начала семестра") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        text = "От этой даты рассчитывается четность и нечетность учебных недель (Числитель / Знаменатель).",
-                        fontSize = 12.sp,
-                        color = iosColors.textSecondary
-                    )
-                    OutlinedTextField(
-                        value = dateInput,
-                        onValueChange = { dateInput = it },
-                        label = { Text("Дата (YYYY-MM-DD)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        val quickDates = listOf(
-                            "1 сент." to "$currentYear-09-01",
-                            "9 февр." to "$currentYear-02-09",
-                            "Этот Пн" to thisMondayIso
-                        )
-                        quickDates.forEach { (label, iso) ->
-                            val isSelected = dateInput.trim() == iso
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (isSelected) IosBlue else IosBlue.copy(alpha = 0.12f))
-                                    .clickable { dateInput = iso }
-                                    .padding(vertical = 7.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = label,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = if (isSelected) Color.White else IosBlue
-                                )
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val trimmed = dateInput.trim()
-                        val validDate = try {
-                            LocalDate.parse(trimmed).toString()
-                        } catch (_: Exception) {
-                            null
-                        }
-                        if (validDate != null) {
-                            viewModel.onSemesterStartDateChanged(validDate)
-                            showSemesterDateDialog = false
-                        } else {
-                            Toast.makeText(context, "Введите дату в формате ГГГГ-ММ-ДД", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                ) {
-                    Text("Сохранить")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSemesterDateDialog = false }) {
-                    Text("Отмена")
-                }
+    // Modal Semester Start Date Calendar Dialog
+    if (showSemesterDateDialog) {
+        IosCalendarDatePickerDialog(
+            title = "Дата начала семестра",
+            initialDateIso = uiState.preferences.semesterStartDateIso,
+            onDismiss = { showSemesterDateDialog = false },
+            onConfirm = { newDateIso ->
+                viewModel.onSemesterStartDateChanged(newDateIso)
+                showSemesterDateDialog = false
             }
         )
     }
@@ -965,8 +919,8 @@ fun SettingsScreen(
     // Modal Add Vacation Dialog
     if (showAddVacationDialog) {
         var vacTitle by remember { mutableStateOf("Осенние каникулы") }
-        var vacStart by remember { mutableStateOf("2026-10-26") }
-        var vacEnd by remember { mutableStateOf("2026-11-03") }
+        var vacStart by remember { mutableStateOf(LocalDate.now().toString()) }
+        var vacEnd by remember { mutableStateOf(LocalDate.now().plusDays(7).toString()) }
 
         AlertDialog(
             onDismissRequest = { showAddVacationDialog = false },
@@ -977,18 +931,19 @@ fun SettingsScreen(
                         value = vacTitle,
                         onValueChange = { vacTitle = it },
                         label = { Text("Название") },
+                        singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    OutlinedTextField(
-                        value = vacStart,
-                        onValueChange = { vacStart = it },
-                        label = { Text("Дата начала (YYYY-MM-DD)") },
+                    IosDatePickerButton(
+                        label = "Дата начала",
+                        dateIso = vacStart,
+                        onDateSelected = { vacStart = it },
                         modifier = Modifier.fillMaxWidth()
                     )
-                    OutlinedTextField(
-                        value = vacEnd,
-                        onValueChange = { vacEnd = it },
-                        label = { Text("Дата окончания (YYYY-MM-DD)") },
+                    IosDatePickerButton(
+                        label = "Дата окончания",
+                        dateIso = vacEnd,
+                        onDateSelected = { vacEnd = it },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }

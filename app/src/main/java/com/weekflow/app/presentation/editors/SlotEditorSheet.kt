@@ -56,6 +56,8 @@ import com.weekflow.app.core.designsystem.IosBlue
 import com.weekflow.app.core.designsystem.IosRed
 import com.weekflow.app.core.designsystem.LocalIosColors
 import com.weekflow.app.core.designsystem.components.IosSegmentedControl
+import com.weekflow.app.core.designsystem.components.IosTimePickerButton
+import com.weekflow.app.core.designsystem.components.IosWheelPicker
 import com.weekflow.app.core.designsystem.iosPrimaryButtonColors
 import com.weekflow.app.core.localization.LocalAppProfile
 import com.weekflow.app.core.util.ColorParser
@@ -346,66 +348,93 @@ fun SlotEditorSheet(
                 )
             }
 
-            // 4. Period Order (Номер занятия) + Quick chips 1..6
+            // 4. Period Order (Прокрутка 1..20 или Вне уроков)
+            val itemWord = appProfile.itemTerm.split(" / ").first().lowercase()
+            val isUnnumbered = periodOrder <= 0
+            var lastNumberedPeriod by remember { mutableIntStateOf(if (initialPeriod > 0) initialPeriod else 1) }
+
             Text(
                 text = "Номер занятия",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = iosColors.textSecondary
             )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                (1..6).forEach { num ->
-                    val isSelected = periodOrder == num
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(34.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (isSelected) IosBlue else iosColors.cardSecondary)
-                            .clickable {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                periodOrder = num
-                                periodOrderText = num.toString()
-                                if (num - 1 in timePresets.indices) {
-                                    val preset = timePresets[num - 1]
-                                    startTime = preset.first
-                                    endTime = preset.second
-                                }
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "$num",
-                            fontSize = 13.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                            color = if (isSelected) Color.White else iosColors.textPrimary
-                        )
+
+            IosSegmentedControl(
+                items = listOf("По номеру ($itemWord)", "Вне уроков (без №)"),
+                selectedIndex = if (isUnnumbered) 1 else 0,
+                onItemSelected = { idx ->
+                    if (idx == 1) {
+                        if (periodOrder > 0) lastNumberedPeriod = periodOrder
+                        periodOrder = 0
+                    } else {
+                        periodOrder = lastNumberedPeriod.coerceAtLeast(1)
                     }
+                }
+            )
+
+            AnimatedVisibility(visible = !isUnnumbered) {
+                val periodChoices = remember { (1..20).toList() }
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(iosColors.cardSecondary.copy(alpha = 0.6f))
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    IosWheelPicker(
+                        items = periodChoices,
+                        selectedIndex = (periodOrder - 1).coerceIn(0, periodChoices.lastIndex),
+                        onItemSelected = { _, num ->
+                            periodOrder = num
+                            lastNumberedPeriod = num
+                            periodOrderText = num.toString()
+                            if (num - 1 in timePresets.indices) {
+                                val preset = timePresets[num - 1]
+                                startTime = preset.first
+                                endTime = preset.second
+                            } else {
+                                val baseStartMin = 8 * 60 + 30 + (num - 1) * 60
+                                val startH = (baseStartMin / 60) % 24
+                                val startM = baseStartMin % 60
+                                val endMin = baseStartMin + 45
+                                val endH = (endMin / 60) % 24
+                                val endM = endMin % 60
+                                startTime = String.format("%02d:%02d", startH, startM)
+                                endTime = String.format("%02d:%02d", endH, endM)
+                            }
+                        },
+                        itemLabel = { num -> "$num $itemWord" },
+                        visibleItemsCount = 3,
+                        itemHeight = 38.dp,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
 
-            // 5. Start and End Times
+            // 5. Start and End Times (Wheel Time Pickers)
+            Text(
+                text = "Время проведения",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = iosColors.textSecondary
+            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                OutlinedTextField(
-                    value = startTime,
-                    onValueChange = { startTime = it },
-                    label = { Text("Начало (ЧЧ:ММ)") },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true
+                IosTimePickerButton(
+                    label = "Начало",
+                    timeString = startTime,
+                    onTimeSelected = { startTime = it },
+                    modifier = Modifier.weight(1f)
                 )
-                OutlinedTextField(
-                    value = endTime,
-                    onValueChange = { endTime = it },
-                    label = { Text("Конец (ЧЧ:ММ)") },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true
+                IosTimePickerButton(
+                    label = "Конец",
+                    timeString = endTime,
+                    onTimeSelected = { endTime = it },
+                    modifier = Modifier.weight(1f)
                 )
             }
 

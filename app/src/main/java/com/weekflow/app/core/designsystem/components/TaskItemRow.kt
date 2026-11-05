@@ -23,8 +23,11 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.HourglassEmpty
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material.icons.rounded.Update
 import androidx.compose.material3.Icon
@@ -32,6 +35,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -62,6 +68,7 @@ fun TaskItemRow(
     linkedActivity: Activity?,
     onToggleCompleted: () -> Unit,
     onClick: () -> Unit,
+    onEditClick: (() -> Unit)? = null,
     onFocusTimerClick: (() -> Unit)? = null,
     onPostponeTomorrowClick: (() -> Unit)? = null,
     onDeleteClick: (() -> Unit)? = null,
@@ -71,6 +78,13 @@ fun TaskItemRow(
     val iosColors = LocalIosColors.current
     val haptic = LocalHapticFeedback.current
     val today = LocalDate.now()
+
+    var isExpanded by remember(task.id) { mutableStateOf(false) }
+    val hasLongContent = task.title.length > 50 ||
+        task.title.contains('\n') ||
+        !task.note.isNullOrBlank() ||
+        task.subtasks.size > 3 ||
+        task.subtasks.any { it.title.length > 40 }
 
     val taskDueDate = task.parseDueDate()
     val isOverdue = taskDueDate != null && taskDueDate.isBefore(today) && !task.isCompleted
@@ -151,18 +165,19 @@ fun TaskItemRow(
                     fontWeight = FontWeight.Medium,
                     color = if (task.isCompleted) iosColors.textSecondary else iosColors.textPrimary,
                     textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
-                    maxLines = 2,
+                    maxLines = if (isExpanded) Int.MAX_VALUE else 3,
                     overflow = TextOverflow.Ellipsis
                 )
 
                 // Task note if present
                 task.note?.takeIf { it.isNotBlank() }?.let { noteText ->
-                    Spacer(modifier = Modifier.height(3.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = noteText,
                         fontSize = 13.sp,
+                        lineHeight = 18.sp,
                         color = iosColors.textSecondary,
-                        maxLines = 2,
+                        maxLines = if (isExpanded) Int.MAX_VALUE else 2,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
@@ -286,8 +301,9 @@ fun TaskItemRow(
                 // Inline Subtask rows if any
                 if (task.subtasks.isNotEmpty() && !task.isCompleted) {
                     Spacer(modifier = Modifier.height(6.dp))
+                    val displayedSubtasks = if (isExpanded) task.subtasks else task.subtasks.take(4)
                     Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        task.subtasks.take(5).forEach { sub ->
+                        displayedSubtasks.forEach { sub ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -301,13 +317,15 @@ fun TaskItemRow(
                                         }
                                     }
                                     .padding(vertical = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalAlignment = Alignment.Top
                             ) {
                                 Icon(
                                     imageVector = if (sub.isDone) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
                                     contentDescription = null,
                                     tint = if (sub.isDone) IosGreen else iosColors.textSecondary,
-                                    modifier = Modifier.size(14.dp)
+                                    modifier = Modifier
+                                        .padding(top = 1.dp)
+                                        .size(14.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
@@ -315,20 +333,65 @@ fun TaskItemRow(
                                     fontSize = 12.sp,
                                     color = if (sub.isDone) iosColors.textSecondary else iosColors.textPrimary,
                                     textDecoration = if (sub.isDone) TextDecoration.LineThrough else null,
-                                    maxLines = 1,
+                                    maxLines = if (isExpanded) Int.MAX_VALUE else 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
                     }
                 }
+
+                // Expand / Collapse inline toggle if content is long
+                if (hasLongContent) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                isExpanded = !isExpanded
+                            }
+                            .padding(vertical = 2.dp, horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = if (isExpanded) "Свернуть" else "Показать полностью",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = IosBlue
+                        )
+                        Icon(
+                            imageVector = if (isExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                            contentDescription = null,
+                            tint = IosBlue,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
             }
 
-            // Quick actions (Focus timer, Postpone, Delete)
+            // Quick actions (Edit, Focus timer, Postpone, Delete)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(0.dp)
             ) {
+                if (onEditClick != null) {
+                    IconButton(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onEditClick()
+                        },
+                        modifier = Modifier.size(30.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Edit,
+                            contentDescription = "Редактировать",
+                            tint = iosColors.textSecondary,
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
+                }
                 if (onFocusTimerClick != null && !task.isCompleted) {
                     IconButton(
                         onClick = {

@@ -44,6 +44,8 @@ import com.weekflow.app.core.designsystem.IosGreen
 import com.weekflow.app.core.designsystem.IosRed
 import com.weekflow.app.core.designsystem.LocalIosColors
 import com.weekflow.app.core.designsystem.components.ColorPalettePicker
+import com.weekflow.app.core.designsystem.components.IosDatePickerButton
+import com.weekflow.app.core.designsystem.components.IosTimePickerButton
 import com.weekflow.app.core.designsystem.iosPrimaryButtonColors
 import com.weekflow.app.core.designsystem.iosSwitchColors
 import com.weekflow.app.domain.model.ActivityCategory
@@ -116,13 +118,12 @@ fun EventEditorSheet(
                 singleLine = true
             )
 
-            // Date
-            OutlinedTextField(
-                value = dateIso,
-                onValueChange = { dateIso = it },
-                label = { Text("Дата (ГГГГ-ММ-ДД)") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
+            // Date (Calendar Picker)
+            IosDatePickerButton(
+                label = "Дата проведения",
+                dateIso = dateIso,
+                onDateSelected = { dateIso = it },
+                modifier = Modifier.fillMaxWidth()
             )
 
             // All Day switch
@@ -139,25 +140,23 @@ fun EventEditorSheet(
                 )
             }
 
-            // Times (if not all day)
+            // Times (if not all day) — Wheel Time Pickers
             AnimatedVisibility(visible = !isAllDay) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    OutlinedTextField(
-                        value = startTime,
-                        onValueChange = { startTime = it },
-                        label = { Text("Начало (ЧЧ:ММ)") },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
+                    IosTimePickerButton(
+                        label = "Начало",
+                        timeString = startTime,
+                        onTimeSelected = { startTime = it },
+                        modifier = Modifier.weight(1f)
                     )
-                    OutlinedTextField(
-                        value = endTime,
-                        onValueChange = { endTime = it },
-                        label = { Text("Конец (ЧЧ:ММ)") },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
+                    IosTimePickerButton(
+                        label = "Конец",
+                        timeString = endTime,
+                        onTimeSelected = { endTime = it },
+                        modifier = Modifier.weight(1f)
                     )
                 }
             }

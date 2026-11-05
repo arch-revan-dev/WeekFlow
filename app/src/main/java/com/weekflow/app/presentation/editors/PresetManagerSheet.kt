@@ -62,6 +62,7 @@ import com.weekflow.app.core.designsystem.IosGreen
 import com.weekflow.app.core.designsystem.IosRed
 import com.weekflow.app.core.designsystem.LocalIosColors
 import com.weekflow.app.core.designsystem.components.ColorPalettePicker
+import com.weekflow.app.core.designsystem.components.IosDatePickerButton
 import com.weekflow.app.core.designsystem.iosPrimaryButtonColors
 import com.weekflow.app.core.designsystem.iosSwitchColors
 import com.weekflow.app.core.util.ColorParser
@@ -626,19 +627,17 @@ fun PresetManagerSheet(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
-                                    OutlinedTextField(
-                                        value = formStartDateIso,
-                                        onValueChange = { formStartDateIso = it },
-                                        label = { Text("С даты (ГГГГ-ММ-ДД)") },
-                                        modifier = Modifier.weight(1f),
-                                        singleLine = true
+                                    IosDatePickerButton(
+                                        label = "С даты",
+                                        dateIso = formStartDateIso,
+                                        onDateSelected = { formStartDateIso = it },
+                                        modifier = Modifier.weight(1f)
                                     )
-                                    OutlinedTextField(
-                                        value = formEndDateIso,
-                                        onValueChange = { formEndDateIso = it },
-                                        label = { Text("По дату (ГГГГ-ММ-ДД)") },
-                                        modifier = Modifier.weight(1f),
-                                        singleLine = true
+                                    IosDatePickerButton(
+                                        label = "По дату",
+                                        dateIso = formEndDateIso,
+                                        onDateSelected = { formEndDateIso = it },
+                                        modifier = Modifier.weight(1f)
                                     )
                                 }
                             }

@@ -87,6 +87,7 @@ import androidx.compose.ui.text.style.TextOverflow
 fun TasksScreen(
     viewModel: TasksViewModel,
     onAddNewTask: () -> Unit,
+    onViewTask: (Task) -> Unit,
     onEditTask: (Task) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -431,7 +432,8 @@ fun TasksScreen(
                                     task = task,
                                     linkedActivity = task.linkedActivityId?.let { activityMap[it] },
                                     onToggleCompleted = { viewModel.toggleTask(task) },
-                                    onClick = { onEditTask(task) },
+                                    onClick = { onViewTask(task) },
+                                    onEditClick = { onEditTask(task) },
                                     onFocusTimerClick = {
                                         focusTimerTitle = task.title
                                         showFocusTimer = true
@@ -453,7 +455,8 @@ fun TasksScreen(
                                     task = task,
                                     linkedActivity = task.linkedActivityId?.let { activityMap[it] },
                                     onToggleCompleted = { viewModel.toggleTask(task) },
-                                    onClick = { onEditTask(task) },
+                                    onClick = { onViewTask(task) },
+                                    onEditClick = { onEditTask(task) },
                                     onFocusTimerClick = {
                                         focusTimerTitle = task.title
                                         showFocusTimer = true
@@ -475,7 +478,8 @@ fun TasksScreen(
                                     task = task,
                                     linkedActivity = task.linkedActivityId?.let { activityMap[it] },
                                     onToggleCompleted = { viewModel.toggleTask(task) },
-                                    onClick = { onEditTask(task) },
+                                    onClick = { onViewTask(task) },
+                                    onEditClick = { onEditTask(task) },
                                     onFocusTimerClick = {
                                         focusTimerTitle = task.title
                                         showFocusTimer = true
@@ -497,7 +501,8 @@ fun TasksScreen(
                                     task = task,
                                     linkedActivity = task.linkedActivityId?.let { activityMap[it] },
                                     onToggleCompleted = { viewModel.toggleTask(task) },
-                                    onClick = { onEditTask(task) },
+                                    onClick = { onViewTask(task) },
+                                    onEditClick = { onEditTask(task) },
                                     onFocusTimerClick = {
                                         focusTimerTitle = task.title
                                         showFocusTimer = true
@@ -538,7 +543,8 @@ fun TasksScreen(
                                         task = task,
                                         linkedActivity = activity,
                                         onToggleCompleted = { viewModel.toggleTask(task) },
-                                        onClick = { onEditTask(task) },
+                                        onClick = { onViewTask(task) },
+                                        onEditClick = { onEditTask(task) },
                                         onFocusTimerClick = {
                                             focusTimerTitle = task.title
                                             showFocusTimer = true
@@ -559,7 +565,8 @@ fun TasksScreen(
                                         task = task,
                                         linkedActivity = null,
                                         onToggleCompleted = { viewModel.toggleTask(task) },
-                                        onClick = { onEditTask(task) },
+                                        onClick = { onViewTask(task) },
+                                        onEditClick = { onEditTask(task) },
                                         onFocusTimerClick = {
                                             focusTimerTitle = task.title
                                             showFocusTimer = true
@@ -631,7 +638,8 @@ fun TasksScreen(
                                     task = task,
                                     linkedActivity = task.linkedActivityId?.let { activityMap[it] },
                                     onToggleCompleted = { viewModel.toggleTask(task) },
-                                    onClick = { onEditTask(task) },
+                                    onClick = { onViewTask(task) },
+                                    onEditClick = { onEditTask(task) },
                                     onDeleteClick = { viewModel.deleteTask(task.id) }
                                 )
                             }

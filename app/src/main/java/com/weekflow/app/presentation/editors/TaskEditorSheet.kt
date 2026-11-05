@@ -61,6 +61,7 @@ import com.weekflow.app.core.designsystem.IosGreen
 import com.weekflow.app.core.designsystem.IosPurple
 import com.weekflow.app.core.designsystem.IosRed
 import com.weekflow.app.core.designsystem.LocalIosColors
+import com.weekflow.app.core.designsystem.components.IosDatePickerButton
 import com.weekflow.app.core.designsystem.iosPrimaryButtonColors
 import com.weekflow.app.core.designsystem.iosSwitchColors
 import com.weekflow.app.core.localization.LocalAppProfile
@@ -313,7 +314,8 @@ fun TaskEditorSheet(
                 label = { Text("Название задачи / задания") },
                 placeholder = { Text("например, Прочитать главу 3, выучить формулы") },
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true
+                minLines = 1,
+                maxLines = 4
             )
 
             // Priority Selector (TickTick style)
@@ -592,12 +594,11 @@ fun TaskEditorSheet(
             }
 
             AnimatedVisibility(visible = isManualDateOverride || selectedActivityId == null) {
-                OutlinedTextField(
-                    value = dueDateIso,
-                    onValueChange = { dueDateIso = it },
-                    label = { Text("Срок сдачи (ГГГГ-ММ-ДД)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
+                IosDatePickerButton(
+                    label = "Срок сдачи задачи",
+                    dateIso = dueDateIso,
+                    onDateSelected = { dueDateIso = it },
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
 
@@ -607,9 +608,9 @@ fun TaskEditorSheet(
                 onValueChange = { note = it },
                 label = { Text("Заметка / Подробности") },
                 placeholder = { Text("например, Страница 42, задачи 1-15") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(80.dp)
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 3,
+                maxLines = 10
             )
 
             // Subtasks / Checklist section

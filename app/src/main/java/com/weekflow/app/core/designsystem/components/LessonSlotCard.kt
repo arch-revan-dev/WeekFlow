@@ -137,7 +137,11 @@ fun LessonSlotCard(
         }
     }
 
-    val itemLabel = "${details.slot.periodOrder} ${appProfile.itemTerm.split(" / ").first().lowercase()}"
+    val itemLabel = if (details.slot.periodOrder > 0) {
+        "${details.slot.periodOrder} ${appProfile.itemTerm.split(" / ").first().lowercase()}"
+    } else {
+        "Вне уроков"
+    }
 
     Box(
         modifier = modifier
@@ -550,15 +554,25 @@ fun LessonSlotCard(
 
                             Spacer(modifier = Modifier.width(6.dp))
 
-                            Text(
-                                text = task.title,
-                                fontSize = 13.sp,
-                                color = if (task.isCompleted) iosColors.textSecondary else iosColors.textPrimary,
-                                textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
-                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = task.title,
+                                    fontSize = 13.sp,
+                                    color = if (task.isCompleted) iosColors.textSecondary else iosColors.textPrimary,
+                                    textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                task.note?.takeIf { it.isNotBlank() }?.let { notePreview ->
+                                    Text(
+                                        text = notePreview,
+                                        fontSize = 11.sp,
+                                        color = iosColors.textSecondary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
 
                             if (task.subtasks.isNotEmpty()) {
                                 val doneCount = task.subtasks.count { it.isDone }

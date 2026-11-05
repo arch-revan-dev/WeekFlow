@@ -1,7 +1,6 @@
 package com.weekflow.app.widget
 
 import android.content.Context
-import android.content.Intent
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -19,8 +18,6 @@ import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.cornerRadius
-import androidx.glance.appwidget.lazy.LazyColumn
-import androidx.glance.appwidget.lazy.items
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
 import androidx.glance.currentState
@@ -49,9 +46,12 @@ import com.weekflow.app.data.local.datastore.UserPreferencesRepository
 import com.weekflow.app.data.local.db.WeekFlowDatabase
 import com.weekflow.app.domain.model.SchedulePreset
 import com.weekflow.app.domain.model.Slot
+import com.weekflow.app.domain.model.UserPreferences
 import com.weekflow.app.domain.model.WeekCycle
+import com.weekflow.app.domain.repository.PreferencesRepository
 import com.weekflow.app.domain.usecase.CalculateWeekCycleUseCase
 import kotlinx.coroutines.flow.first
+import org.koin.core.context.GlobalContext
 import java.time.LocalDate
 import java.time.LocalTime
 
@@ -61,7 +61,7 @@ class RefreshWidgetAction : ActionCallback {
         glanceId: GlanceId,
         parameters: ActionParameters
     ) {
-        WeekFlowWidgetUpdater.forceUpdateAll(context)
+        WeekFlowWidgetUpdater.forceUpdateAll(context.applicationContext)
     }
 }
 
@@ -79,95 +79,125 @@ class WeekFlowGlanceWidget : GlanceAppWidget() {
 
     override val stateDefinition: GlanceStateDefinition<Preferences> = PreferencesGlanceStateDefinition
 
+    companion object {
+        @Volatile
+        private var fallbackDb: WeekFlowDatabase? = null
+
+        fun getDatabase(context: Context): WeekFlowDatabase {
+            val appContext = context.applicationContext
+            GlobalContext.getOrNull()?.getOrNull<WeekFlowDatabase>()?.let { return it }
+            return fallbackDb ?: synchronized(this) {
+                fallbackDb ?: Room.databaseBuilder(
+                    appContext,
+                    WeekFlowDatabase::class.java,
+                    WeekFlowDatabase.DATABASE_NAME
+                )
+                    .addMigrations(WeekFlowDatabase.MIGRATION_2_3)
+                    .addCallback(WeekFlowDatabase.DEFAULT_PRESET_CALLBACK)
+                    .fallbackToDestructiveMigration()
+                    .build()
+                    .also { fallbackDb = it }
+            }
+        }
+
+        fun getPreferencesRepo(context: Context): PreferencesRepository {
+            val appContext = context.applicationContext
+            GlobalContext.getOrNull()?.getOrNull<PreferencesRepository>()?.let { return it }
+            return UserPreferencesRepository(appContext)
+        }
+    }
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val database = Room.databaseBuilder(
-            context,
-            WeekFlowDatabase::class.java,
-            WeekFlowDatabase.DATABASE_NAME
-        )
-            .addMigrations(WeekFlowDatabase.MIGRATION_2_3)
-            .addCallback(WeekFlowDatabase.DEFAULT_PRESET_CALLBACK)
-            .fallbackToDestructiveMigration()
-            .build()
-
-        val prefRepo = UserPreferencesRepository(context)
-        val preferences = prefRepo.userPreferences.first()
-        val calculateWeekCycleUseCase = CalculateWeekCycleUseCase()
-
-        val allPresets = database.presetDao().getAllList().map { it.toDomain() }
-        val allActivities = database.activityDao().getAllList().associateBy { it.id }
-        val allSlots = database.slotDao().getAllList().map { it.toDomain() }
-        val allTasks = database.taskDao().getAllList().map { it.toDomain() }
-
+        val appContext = context.applicationContext
         val today = LocalDate.now()
         val nowTime = LocalTime.now()
 
-        // Today's preset, cycle and slots
-        val (todayPreset, _) = SchedulePreset.resolveForDate(today, allPresets, preferences.activePresetId)
-        val todayCycle = calculateWeekCycleUseCase(today, preferences)
-        val todaySlots = allSlots.filter { slot ->
-            slot.presetId == todayPreset.id &&
-                slot.dayOfWeek == today.dayOfWeek.value &&
-                (!preferences.isTwoWeekCycleEnabled ||
-                    slot.weekCycle == WeekCycle.EVERY_WEEK ||
-                    slot.weekCycle == todayCycle)
-        }.sortedBy { it.parseStartTime() }
+        var isTargetToday = true
+        var targetDate = today
+        var cycleBadge = ""
+        var targetItems = emptyList<WidgetSlotItem>()
+        var pendingTasksForTargetDay = 0
 
-        // Find active slot currently ongoing
-        val activeSlotId = todaySlots.firstOrNull { slot ->
-            val start = slot.parseStartTime()
-            val end = slot.parseEndTime()
-            !nowTime.isBefore(start) && nowTime.isBefore(end)
-        }?.id
+        runCatching {
+            val database = getDatabase(appContext)
+            val prefRepo = getPreferencesRepo(appContext)
+            val preferences = runCatching { prefRepo.userPreferences.first() }.getOrDefault(UserPreferences())
+            val calculateWeekCycleUseCase = CalculateWeekCycleUseCase()
 
-        // Remaining today's slots that haven't ended yet
-        val remainingTodaySlots = todaySlots.filter { it.parseEndTime().isAfter(nowTime) }
+            val allPresets = database.presetDao().getAllList().map { it.toDomain() }
+            val allActivities = database.activityDao().getAllList().associateBy { it.id }
+            val allSlots = database.slotDao().getAllList().map { it.toDomain() }
+            val allTasks = database.taskDao().getAllList().map { it.toDomain() }
 
-        // Decide target date (Today if there are remaining/active slots, else Tomorrow)
-        val isTargetToday = remainingTodaySlots.isNotEmpty()
-        val targetDate = if (isTargetToday) today else today.plusDays(1)
-        val (targetPreset, _) = SchedulePreset.resolveForDate(targetDate, allPresets, preferences.activePresetId)
-        val targetCycle = calculateWeekCycleUseCase(targetDate, preferences)
-
-        val slotsToShow = if (isTargetToday) {
-            remainingTodaySlots
-        } else {
-            allSlots.filter { slot ->
-                slot.presetId == targetPreset.id &&
-                    slot.dayOfWeek == targetDate.dayOfWeek.value &&
+            // Today's preset, cycle and slots
+            val (todayPreset, _) = SchedulePreset.resolveForDate(today, allPresets, preferences.activePresetId)
+            val todayCycle = calculateWeekCycleUseCase(today, preferences)
+            val todaySlots = allSlots.filter { slot ->
+                slot.presetId == todayPreset.id &&
+                    slot.dayOfWeek == today.dayOfWeek.value &&
                     (!preferences.isTwoWeekCycleEnabled ||
                         slot.weekCycle == WeekCycle.EVERY_WEEK ||
-                        slot.weekCycle == targetCycle)
+                        slot.weekCycle == todayCycle)
             }.sortedBy { it.parseStartTime() }
-        }
 
-        val targetItems = slotsToShow.map { slot ->
-            val act = allActivities[slot.activityTypeId]
-            val tasksForSlot = allTasks.filter {
-                it.presetId == targetPreset.id &&
-                    !it.isCompleted &&
-                    it.dueDateIso == targetDate.toString() &&
-                    (it.linkedSlotId == slot.id || (it.linkedSlotId == null && it.linkedActivityId == slot.activityTypeId))
+            // Find active slot currently ongoing
+            val activeSlotId = todaySlots.firstOrNull { slot ->
+                val start = slot.parseStartTime()
+                val end = slot.parseEndTime()
+                !nowTime.isBefore(start) && nowTime.isBefore(end)
+            }?.id
+
+            // Remaining today's slots that haven't ended yet
+            val remainingTodaySlots = todaySlots.filter { it.parseEndTime().isAfter(nowTime) }
+
+            // Decide target date (Today if there are remaining/active slots, else Tomorrow)
+            isTargetToday = remainingTodaySlots.isNotEmpty()
+            targetDate = if (isTargetToday) today else today.plusDays(1)
+            val (targetPreset, _) = SchedulePreset.resolveForDate(targetDate, allPresets, preferences.activePresetId)
+            val targetCycle = calculateWeekCycleUseCase(targetDate, preferences)
+
+            val slotsToShow = if (isTargetToday) {
+                remainingTodaySlots
+            } else {
+                allSlots.filter { slot ->
+                    slot.presetId == targetPreset.id &&
+                        slot.dayOfWeek == targetDate.dayOfWeek.value &&
+                        (!preferences.isTwoWeekCycleEnabled ||
+                            slot.weekCycle == WeekCycle.EVERY_WEEK ||
+                            slot.weekCycle == targetCycle)
+                }.sortedBy { it.parseStartTime() }
             }
-            WidgetSlotItem(
-                slot = slot,
-                activityName = act?.name ?: "Занятие",
-                activityColor = act?.colorHex?.let { ColorParser.parseHexColor(it) } ?: Color(0xFF007AFF),
-                location = slot.customLocation?.takeIf { it.isNotBlank() } ?: act?.defaultLocation ?: "",
-                type = slot.customType?.takeIf { it.isNotBlank() } ?: act?.defaultType ?: "",
-                taskCount = tasksForSlot.size,
-                isCurrent = (slot.id == activeSlotId && isTargetToday)
-            )
-        }
 
-        val pendingTasksForTargetDay = allTasks.filter {
-            it.presetId == targetPreset.id && it.dueDateIso == targetDate.toString() && !it.isCompleted
-        }.size
+            targetItems = slotsToShow.take(8).map { slot ->
+                val act = allActivities[slot.activityTypeId]
+                val tasksForSlot = allTasks.filter {
+                    (preferences.showAllPresetsTasks || it.presetId == targetPreset.id) &&
+                        !it.isCompleted &&
+                        it.dueDateIso == targetDate.toString() &&
+                        (it.linkedSlotId == slot.id || (it.linkedSlotId == null && it.linkedActivityId == slot.activityTypeId))
+                }
+                WidgetSlotItem(
+                    slot = slot,
+                    activityName = act?.name ?: "Занятие",
+                    activityColor = act?.colorHex?.let { ColorParser.parseHexColor(it) } ?: Color(0xFF007AFF),
+                    location = slot.customLocation?.takeIf { it.isNotBlank() } ?: act?.defaultLocation ?: "",
+                    type = slot.customType?.takeIf { it.isNotBlank() } ?: act?.defaultType ?: "",
+                    taskCount = tasksForSlot.size,
+                    isCurrent = (slot.id == activeSlotId && isTargetToday)
+                )
+            }
 
-        val cycleBadge = if (preferences.isTwoWeekCycleEnabled && targetCycle != WeekCycle.EVERY_WEEK) {
-            targetCycle.displayName
-        } else {
-            ""
+            pendingTasksForTargetDay = allTasks.count {
+                (preferences.showAllPresetsTasks || it.presetId == targetPreset.id) &&
+                    it.dueDateIso == targetDate.toString() &&
+                    !it.isCompleted
+            }
+
+            cycleBadge = if (preferences.isTwoWeekCycleEnabled && targetCycle != WeekCycle.EVERY_WEEK) {
+                targetCycle.displayName
+            } else {
+                ""
+            }
         }
 
         provideContent {
@@ -176,7 +206,6 @@ class WeekFlowGlanceWidget : GlanceAppWidget() {
 
             GlanceTheme {
                 WidgetRootView(
-                    context = context,
                     targetDate = targetDate,
                     isToday = isTargetToday,
                     cycleBadge = cycleBadge,
@@ -190,7 +219,6 @@ class WeekFlowGlanceWidget : GlanceAppWidget() {
 
     @Composable
     private fun WidgetRootView(
-        context: Context,
         targetDate: LocalDate,
         isToday: Boolean,
         cycleBadge: String,
@@ -214,7 +242,9 @@ class WeekFlowGlanceWidget : GlanceAppWidget() {
             ) {
                 // Left: Title (Date + Today/Tomorrow)
                 Row(
-                    modifier = GlanceModifier.defaultWeight(),
+                    modifier = GlanceModifier
+                        .defaultWeight()
+                        .clickable(actionStartActivity<MainActivity>()),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     val dateFormatted = DateTimeUtils.formatDateWithDay(targetDate)
@@ -303,7 +333,7 @@ class WeekFlowGlanceWidget : GlanceAppWidget() {
                 }
             }
 
-            // 2. Compact Scrollable Schedule List
+            // 2. Direct Schedule List (chunked by 4 so Glance Column never exceeds 10-child limit and requires no RemoteViewsService)
             if (items.isEmpty()) {
                 Box(
                     modifier = GlanceModifier
@@ -322,114 +352,122 @@ class WeekFlowGlanceWidget : GlanceAppWidget() {
                     )
                 }
             } else {
-                LazyColumn(
+                Column(
                     modifier = GlanceModifier
                         .fillMaxWidth()
                         .defaultWeight()
                 ) {
-                    items(items) { item ->
-                        val rowBg = if (item.isCurrent) Color(0xFF2C2C2E) else Color(0xFF1E1E20)
+                    items.chunked(4).forEach { chunk ->
+                        Column(modifier = GlanceModifier.fillMaxWidth()) {
+                            chunk.forEach { item ->
+                                val rowBg = if (item.isCurrent) Color(0xFF2C2C2E) else Color(0xFF1E1E20)
 
-                        Row(
-                            modifier = GlanceModifier
-                                .fillMaxWidth()
-                                .cornerRadius(8.dp)
-                                .background(rowBg)
-                                .padding(horizontal = 8.dp, vertical = 5.dp)
-                                .clickable(actionStartActivity<MainActivity>()),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Left vertical color strip (3.dp x 26.dp)
-                            Box(
-                                modifier = GlanceModifier
-                                    .width(3.dp)
-                                    .height(26.dp)
-                                    .cornerRadius(1.5.dp)
-                                    .background(item.activityColor)
-                            ) {}
-
-                            Spacer(modifier = GlanceModifier.width(6.dp))
-
-                            // Time block (width 46.dp)
-                            Column(modifier = GlanceModifier.width(46.dp)) {
-                                Text(
-                                    text = item.slot.startTime,
-                                    style = TextStyle(
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = ColorProvider(Color.White)
-                                    )
-                                )
-                                Text(
-                                    text = item.slot.endTime,
-                                    style = TextStyle(
-                                        fontSize = 9.sp,
-                                        color = ColorProvider(Color(0xFF8E8E93))
-                                    )
-                                )
-                            }
-
-                            Spacer(modifier = GlanceModifier.width(6.dp))
-
-                            // Subject & Task indicator
-                            Row(
-                                modifier = GlanceModifier.defaultWeight(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = item.activityName,
-                                    style = TextStyle(
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = ColorProvider(Color.White)
-                                    ),
-                                    maxLines = 1
-                                )
-                                if (item.taskCount > 0) {
-                                    Spacer(modifier = GlanceModifier.width(4.dp))
-                                    Text(
-                                        text = "📌${item.taskCount}",
-                                        style = TextStyle(
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = ColorProvider(Color(0xFFFF9500))
-                                        )
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = GlanceModifier.width(6.dp))
-
-                            // Right: Current badge or Location
-                            if (item.isCurrent) {
                                 Box(
                                     modifier = GlanceModifier
-                                        .cornerRadius(4.dp)
-                                        .background(Color(0xFF34C759).copy(alpha = 0.2f))
-                                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                                        .fillMaxWidth()
+                                        .padding(bottom = 4.dp)
                                 ) {
-                                    Text(
-                                        text = "● СЕЙЧАС",
-                                        style = TextStyle(
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = ColorProvider(Color(0xFF34C759))
-                                        )
-                                    )
+                                    Row(
+                                        modifier = GlanceModifier
+                                            .fillMaxWidth()
+                                            .cornerRadius(8.dp)
+                                            .background(rowBg)
+                                            .padding(horizontal = 8.dp, vertical = 5.dp)
+                                            .clickable(actionStartActivity<MainActivity>()),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        // Left vertical color strip (3.dp x 26.dp)
+                                        Box(
+                                            modifier = GlanceModifier
+                                                .width(3.dp)
+                                                .height(26.dp)
+                                                .cornerRadius(1.5.dp)
+                                                .background(item.activityColor)
+                                        ) {}
+
+                                        Spacer(modifier = GlanceModifier.width(6.dp))
+
+                                        // Time block (width 46.dp)
+                                        Column(modifier = GlanceModifier.width(46.dp)) {
+                                            Text(
+                                                text = item.slot.startTime,
+                                                style = TextStyle(
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = ColorProvider(Color.White)
+                                                )
+                                            )
+                                            Text(
+                                                text = item.slot.endTime,
+                                                style = TextStyle(
+                                                    fontSize = 9.sp,
+                                                    color = ColorProvider(Color(0xFF8E8E93))
+                                                )
+                                            )
+                                        }
+
+                                        Spacer(modifier = GlanceModifier.width(6.dp))
+
+                                        // Subject & Task indicator
+                                        Row(
+                                            modifier = GlanceModifier.defaultWeight(),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = item.activityName,
+                                                style = TextStyle(
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = ColorProvider(Color.White)
+                                                ),
+                                                maxLines = 1
+                                            )
+                                            if (item.taskCount > 0) {
+                                                Spacer(modifier = GlanceModifier.width(4.dp))
+                                                Text(
+                                                    text = "📌${item.taskCount}",
+                                                    style = TextStyle(
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = ColorProvider(Color(0xFFFF9500))
+                                                    )
+                                                )
+                                            }
+                                        }
+
+                                        Spacer(modifier = GlanceModifier.width(6.dp))
+
+                                        // Right: Current badge or Location
+                                        if (item.isCurrent) {
+                                            Box(
+                                                modifier = GlanceModifier
+                                                    .cornerRadius(4.dp)
+                                                    .background(Color(0xFF1F4E2C))
+                                                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                                            ) {
+                                                Text(
+                                                    text = "● СЕЙЧАС",
+                                                    style = TextStyle(
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = ColorProvider(Color(0xFF34C759))
+                                                    )
+                                                )
+                                            }
+                                        } else if (item.location.isNotBlank()) {
+                                            Text(
+                                                text = item.location,
+                                                style = TextStyle(
+                                                    fontSize = 10.sp,
+                                                    color = ColorProvider(Color(0xFF8E8E93))
+                                                ),
+                                                maxLines = 1
+                                            )
+                                        }
+                                    }
                                 }
-                            } else if (item.location.isNotBlank()) {
-                                Text(
-                                    text = item.location,
-                                    style = TextStyle(
-                                        fontSize = 10.sp,
-                                        color = ColorProvider(Color(0xFF8E8E93))
-                                    ),
-                                    maxLines = 1
-                                )
                             }
                         }
-
-                        Spacer(modifier = GlanceModifier.height(4.dp))
                     }
                 }
             }

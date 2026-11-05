@@ -25,11 +25,13 @@ import java.io.IOException
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "user_preferences")
 
-class UserPreferencesRepository(private val context: Context) : PreferencesRepository {
+class UserPreferencesRepository(context: Context) : PreferencesRepository {
+
+    private val appContext: Context = context.applicationContext
 
     private suspend fun notifyWidget() {
         try {
-            WeekFlowWidgetUpdater.forceUpdateAll(context)
+            WeekFlowWidgetUpdater.forceUpdateAll(appContext)
         } catch (_: Exception) {}
     }
 
@@ -62,7 +64,7 @@ class UserPreferencesRepository(private val context: Context) : PreferencesRepos
         val FOCUS_MINUTES_TOTAL = intPreferencesKey("focus_minutes_total")
     }
 
-    override val userPreferences: Flow<UserPreferences> = context.dataStore.data
+    override val userPreferences: Flow<UserPreferences> = appContext.dataStore.data
         .catch { exception ->
             if (exception is IOException) {
                 emit(emptyPreferences())
@@ -138,33 +140,33 @@ class UserPreferencesRepository(private val context: Context) : PreferencesRepos
         }
 
     override suspend fun updateAppProfile(profile: AppProfile) {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences[PreferencesKeys.APP_PROFILE] = profile.name
         }
     }
 
     override suspend fun updateThemeMode(themeMode: AppThemeMode) {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences[PreferencesKeys.THEME_MODE] = themeMode.name
         }
     }
 
     override suspend fun updateTwoWeekCycleEnabled(enabled: Boolean) {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences[PreferencesKeys.IS_TWO_WEEK_CYCLE_ENABLED] = enabled
         }
         notifyWidget()
     }
 
     override suspend fun updateSemesterStartDate(dateIso: String) {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences[PreferencesKeys.SEMESTER_START_DATE_ISO] = dateIso
         }
         notifyWidget()
     }
 
     override suspend fun toggleInvertWeekCycle() {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             val current = preferences[PreferencesKeys.INVERT_WEEK_CYCLE] ?: false
             preferences[PreferencesKeys.INVERT_WEEK_CYCLE] = !current
         }
@@ -172,114 +174,114 @@ class UserPreferencesRepository(private val context: Context) : PreferencesRepos
     }
 
     override suspend fun updateShowRussianHolidays(show: Boolean) {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences[PreferencesKeys.SHOW_RUSSIAN_HOLIDAYS] = show
         }
         notifyWidget()
     }
 
     override suspend fun updateSkipHolidaysInSmartHomework(skip: Boolean) {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences[PreferencesKeys.SKIP_HOLIDAYS_IN_SMART_HOMEWORK] = skip
         }
         notifyWidget()
     }
 
     override suspend fun setFirstLaunchCompleted(completed: Boolean) {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences[PreferencesKeys.IS_FIRST_LAUNCH_COMPLETED] = completed
         }
     }
 
     override suspend fun updateCardStyle(style: ScheduleCardStyle) {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences[PreferencesKeys.CARD_STYLE] = style.name
         }
     }
 
     override suspend fun updateCardDensity(density: CardDensity) {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences[PreferencesKeys.CARD_DENSITY] = density.name
         }
     }
 
     override suspend fun updateCornerRadiusDp(radius: Int) {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences[PreferencesKeys.CORNER_RADIUS_DP] = radius
         }
     }
 
     override suspend fun updateShowBreaks(show: Boolean) {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences[PreferencesKeys.SHOW_BREAKS] = show
         }
     }
 
     override suspend fun updateShowProgressBar(show: Boolean) {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences[PreferencesKeys.SHOW_PROGRESS_BAR] = show
         }
     }
 
     override suspend fun updateScheduleViewMode(mode: ScheduleViewMode) {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences[PreferencesKeys.SCHEDULE_VIEW_MODE] = mode.name
         }
     }
 
     override suspend fun updateNotificationsEnabled(enabled: Boolean) {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences[PreferencesKeys.NOTIFICATIONS_ENABLED] = enabled
         }
     }
 
     override suspend fun updateNotifyMinutesBefore(minutes: Int) {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences[PreferencesKeys.NOTIFY_MINUTES_BEFORE] = minutes
         }
     }
 
     override suspend fun updateEveningSummaryEnabled(enabled: Boolean) {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences[PreferencesKeys.EVENING_SUMMARY_ENABLED] = enabled
         }
     }
 
     override suspend fun updateEveningSummaryTime(time: String) {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences[PreferencesKeys.EVENING_SUMMARY_TIME] = time
         }
     }
 
     override suspend fun updateTaskRemindersEnabled(enabled: Boolean) {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences[PreferencesKeys.TASK_REMINDERS_ENABLED] = enabled
         }
     }
 
     override suspend fun updateSaturdayWeekend(isWeekend: Boolean) {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences[PreferencesKeys.IS_SATURDAY_WEEKEND] = isWeekend
         }
         notifyWidget()
     }
 
     override suspend fun updateActivePresetId(presetId: String) {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences[PreferencesKeys.ACTIVE_PRESET_ID] = presetId.ifBlank { SchedulePreset.DEFAULT_ID }
         }
         notifyWidget()
     }
 
     override suspend fun updateShowAllPresetsTasks(show: Boolean) {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences[PreferencesKeys.SHOW_ALL_PRESETS_TASKS] = show
         }
         notifyWidget()
     }
 
     override suspend fun recordCompletedFocusSession(minutes: Int) {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             val currentSessions = preferences[PreferencesKeys.FOCUS_SESSIONS_COMPLETED] ?: 0
             val currentMinutes = preferences[PreferencesKeys.FOCUS_MINUTES_TOTAL] ?: 0
             preferences[PreferencesKeys.FOCUS_SESSIONS_COMPLETED] = currentSessions + 1
