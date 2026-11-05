@@ -1,5 +1,5 @@
 # ==============================================================================
-# WeekFlow v2.0.0 Proguard & R8 Optimization Rules
+# WeekFlow v4.0.0 ProGuard & R8 Optimization Rules
 # ==============================================================================
 
 # --- Kotlinx Serialization ---
@@ -22,20 +22,28 @@
     kotlinx.serialization.KSerializer serializer(...);
 }
 
-# Preserve WeekFlow domain models and clean export schema fields
--keep class com.weeklie.calendar.domain.model.** { *; }
--keep class com.weeklie.calendar.data.** { *; }
+# Preserve WeekFlow domain models, DTOs, entities, and serialization schemas
+-keep class com.weekflow.app.domain.model.** { *; }
+-keep class com.weekflow.app.data.** { *; }
 
-# --- Android Jetpack Compose ---
+# --- Room Database ---
+-keep class * extends androidx.room.RoomDatabase { *; }
+-keep @androidx.room.Entity class * { *; }
+-dontwarn androidx.room.paging.**
+
+# --- Android Jetpack Compose & Glance ---
 -keep class androidx.compose.runtime.** { *; }
 -keep class androidx.compose.ui.** { *; }
 -keep class androidx.compose.material3.** { *; }
+-keep class androidx.glance.** { *; }
 
-# --- App Widgets & RemoteViews ---
--keep class com.weeklie.calendar.widget.ScheduleAppWidget { *; }
--keep class com.weeklie.calendar.util.ReminderBroadcastReceiver { *; }
--keep class com.weeklie.calendar.MainActivity { *; }
+# --- App Widgets, Receivers & Entry Points ---
+-keep class com.weekflow.app.MainActivity { *; }
+-keep class com.weekflow.app.WeekFlowApp { *; }
+-keep class com.weekflow.app.widget.** { *; }
+-keep class com.weekflow.app.core.notifications.** { *; }
 
-# --- AndroidX Core & Navigation ---
+# --- AndroidX Core, Koin & Navigation ---
 -dontwarn androidx.navigation.**
 -dontwarn kotlinx.serialization.**
+-dontwarn org.koin.**
