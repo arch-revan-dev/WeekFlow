@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Subtle drop shadow on calendar body -->
+    <path
+        android:fillColor="#22000000"
+        android:pathData="M31,31 h46 c4.4,0 8,3.6 8,8 v38 c0,4.4 -3.6,8 -8,8 h-46 c-4.4,0 -8,-3.6 -8,-8 v-38 c0,-4.4 3.6,-8 8,-8 z" />
+
+    <!-- Calendar main white card -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M31,29 h46 c4.4,0 8,3.6 8,8 v38 c0,4.4 -3.6,8 -8,8 h-46 c-4.4,0 -8,-3.6 -8,-8 v-38 c0,-4.4 3.6,-8 8,-8 z" />
+
+    <!-- Top header stripe (iOS Blue/Indigo) -->
+    <path
+        android:fillColor="#007AFF"
+        android:pathData="M31,29 h46 c4.4,0 8,3.6 8,8 v8 h-62 v-8 c0,-4.4 3.6,-8 8,-8 z" />
+
+    <!-- Calendar rings -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M40,25 c1.1,0 2,0.9 2,2 v6 c0,1.1 -0.9,2 -2,2 s-2,-0.9 -2,-2 v-6 c0,-1.1 0.9,-2 2,-2 z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M68,25 c1.1,0 2,0.9 2,2 v6 c0,1.1 -0.9,2 -2,2 s-2,-0.9 -2,-2 v-6 c0,-1.1 0.9,-2 2,-2 z" />
+
+    <!-- Flow Rhythm / Waves representing schedule blocks -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#007AFF"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round"
+        android:pathData="M38,52 h16" />
+
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#5856D6"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round"
+        android:pathData="M38,61 h24" />
+
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#34C759"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round"
+        android:pathData="M38,70 h12" />
+
+    <!-- Circular check badge at bottom right -->
+    <path
+        android:fillColor="#34C759"
+        android:pathData="M67,65 c6.075,0 11,4.925 11,11 s-4.925,11 -11,11 s-11,-4.925 -11,-11 s4.925,-11 11,-11 z" />
+
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M62.5,76 l3,3.2 l6,-6.4" />
+</vector>

@@ -1,0 +1,286 @@
+package com.weekflow.app.domain.model
+
+import kotlinx.serialization.Serializable
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
+import java.util.UUID
+
+@Serializable
+data class SchedulePreset(
+    val id: String = UUID.randomUUID().toString(),
+    val name: String,
+    val iconEmoji: String = "🎓",
+    val colorHex: String = "#007AFF",
+    val autoStartDateIso: String? = null,
+    val autoEndDateIso: String? = null,
+    val createdAt: Long = System.currentTimeMillis()
+) {
+    fun matchesDate(date: LocalDate): Boolean {
+        val start = autoStartDateIso?.takeIf { it.isNotBlank() }?.let {
+            try { LocalDate.parse(it) } catch (_: Exception) { null }
+        } ?: return false
+        val end = autoEndDateIso?.takeIf { it.isNotBlank() }?.let {
+            try { LocalDate.parse(it) } catch (_: Exception) { null }
+        } ?: return false
+        return !date.isBefore(start) && !date.isAfter(end)
+    }
+
+    companion object {
+        const val DEFAULT_ID = "default"
+        val DEFAULT_PRESET = SchedulePreset(
+            id = DEFAULT_ID,
+            name = "Основной",
+            iconEmoji = "🎓",
+            colorHex = "#007AFF",
+            createdAt = 0L
+        )
+
+        fun resolveForDate(
+            date: LocalDate,
+            presets: List<SchedulePreset>,
+            activePresetId: String,
+            manualOverridePresetId: String? = null
+        ): Pair<SchedulePreset, SchedulePreset?> {
+            val all = if (presets.isEmpty()) listOf(DEFAULT_PRESET) else presets
+            val dateScheduledPreset = all.firstOrNull { it.matchesDate(date) }
+            if (manualOverridePresetId != null) {
+                val chosen = all.firstOrNull { it.id == manualOverridePresetId }
+                    ?: all.firstOrNull { it.id == activePresetId }
+                    ?: all.first()
+                return Pair(chosen, dateScheduledPreset?.takeIf { it.id != chosen.id })
+            }
+            if (dateScheduledPreset != null) {
+                return Pair(dateScheduledPreset, dateScheduledPreset)
+            }
+            val active = all.firstOrNull { it.id == activePresetId } ?: all.first()
+            return Pair(active, null)
+        }
+    }
+}
+
+@Serializable
+data class SubtaskItem(
+    val id: String = UUID.randomUUID().toString(),
+    val title: String,
+    val isDone: Boolean = false
+)
+
+@Serializable
+data class Activity(
+    val id: String = UUID.randomUUID().toString(),
+    val name: String,
+    val shortName: String = "",
+    val category: ActivityCategory = ActivityCategory.STUDY,
+    val colorHex: String = category.defaultColorHex,
+    val defaultLocation: String? = null,
+    val defaultInstructor: String? = null,
+    val defaultType: String? = null,
+    val presetId: String = SchedulePreset.DEFAULT_ID
+)
+
+@Serializable
+data class Slot(
+    val id: String = UUID.randomUUID().toString(),
+    val activityTypeId: String,
+    val dayOfWeek: Int, // 1 = Monday .. 7 = Sunday
+    val weekCycle: WeekCycle = WeekCycle.EVERY_WEEK,
+    val startTime: String, // "HH:mm"
+    val endTime: String,   // "HH:mm"
+    val customLocation: String? = null,
+    val customInstructor: String? = null,
+    val customType: String? = null,
+    val customNote: String? = null,
+    val periodOrder: Int = 1,
+    val presetId: String = SchedulePreset.DEFAULT_ID
+) {
+    fun parseStartTime(): LocalTime = try {
+        LocalTime.parse(startTime, DateTimeFormatter.ofPattern("HH:mm"))
+    } catch (_: Exception) {
+        LocalTime.of(9, 0)
+    }
+
+    fun parseEndTime(): LocalTime = try {
+        LocalTime.parse(endTime, DateTimeFormatter.ofPattern("HH:mm"))
+    } catch (_: Exception) {
+        LocalTime.of(10, 30)
+    }
+}
+
+@Serializable
+data class CalendarEvent(
+    val id: String = UUID.randomUUID().toString(),
+    val title: String,
+    val dateIso: String, // "YYYY-MM-DD"
+    val startTime: String? = null, // "HH:mm"
+    val endTime: String? = null,   // "HH:mm"
+    val isAllDay: Boolean = false,
+    val colorHex: String = "#007AFF",
+    val location: String = "",
+    val description: String = "",
+    val category: ActivityCategory = ActivityCategory.PERSONAL,
+    val presetId: String = SchedulePreset.DEFAULT_ID
+) {
+    fun parseDate(): LocalDate = try {
+        LocalDate.parse(dateIso)
+    } catch (_: Exception) {
+        LocalDate.now()
+    }
+
+    fun parseStartTime(): LocalTime? = startTime?.let {
+        try {
+            LocalTime.parse(it, DateTimeFormatter.ofPattern("HH:mm"))
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun parseEndTime(): LocalTime? = endTime?.let {
+        try {
+            LocalTime.parse(it, DateTimeFormatter.ofPattern("HH:mm"))
+        } catch (_: Exception) {
+            null
+        }
+    }
+}
+
+@Serializable
+data class Task(
+    val id: String = UUID.randomUUID().toString(),
+    val title: String,
+    val dueDateIso: String? = null, // "YYYY-MM-DD"
+    val linkedSlotId: String? = null,
+    val linkedActivityId: String? = null,
+    val isCompleted: Boolean = false,
+    val note: String? = null,
+    val priority: TaskPriority = TaskPriority.NONE,
+    val subtasks: List<SubtaskItem> = emptyList(),
+    val presetId: String = SchedulePreset.DEFAULT_ID
+) {
+    fun parseDueDate(): LocalDate? = dueDateIso?.let {
+        try {
+            LocalDate.parse(it)
+        } catch (_: Exception) {
+            null
+        }
+    }
+}
+
+@Serializable
+data class Vacation(
+    val id: String = UUID.randomUUID().toString(),
+    val title: String,
+    val startDateIso: String,
+    val endDateIso: String
+) {
+    fun parseStartDate(): LocalDate = try {
+        LocalDate.parse(startDateIso)
+    } catch (_: Exception) {
+        LocalDate.now()
+    }
+
+    fun parseEndDate(): LocalDate = try {
+        LocalDate.parse(endDateIso)
+    } catch (_: Exception) {
+        LocalDate.now()
+    }
+
+    fun contains(date: LocalDate): Boolean {
+        val start = parseStartDate()
+        val end = parseEndDate()
+        return !date.isBefore(start) && !date.isAfter(end)
+    }
+}
+
+data class SlotWithDetails(
+    val slot: Slot,
+    val activity: Activity,
+    val tasks: List<Task> = emptyList()
+) {
+    val effectiveLocation: String?
+        get() = slot.customLocation?.takeIf { it.isNotBlank() } ?: activity.defaultLocation
+
+    val effectiveInstructor: String?
+        get() = slot.customInstructor?.takeIf { it.isNotBlank() } ?: activity.defaultInstructor
+
+    val effectiveType: String?
+        get() = slot.customType?.takeIf { it.isNotBlank() } ?: activity.defaultType
+}
+
+sealed interface ScheduleTimelineItem {
+    data class Lesson(val details: SlotWithDetails) : ScheduleTimelineItem
+    data class BreakWindow(
+        val durationMinutes: Long,
+        val startTime: String,
+        val endTime: String
+    ) : ScheduleTimelineItem
+    data class TimedEvent(val event: CalendarEvent) : ScheduleTimelineItem
+}
+
+data class LiveLessonStatus(
+    val currentSlot: SlotWithDetails? = null,
+    val nextSlot: SlotWithDetails? = null,
+    val progress: Float = 0f, // 0.0 .. 1.0
+    val minutesLeftInCurrent: Long = 0,
+    val minutesUntilNext: Long = 0,
+    val isBreakNow: Boolean = false
+)
+
+data class DayScheduleUiModel(
+    val date: LocalDate,
+    val holidayOrVacationTitle: String? = null,
+    val isHoliday: Boolean = false,
+    val isVacation: Boolean = false,
+    val allDayEvents: List<CalendarEvent> = emptyList(),
+    val timelineItems: List<ScheduleTimelineItem> = emptyList(),
+    val pendingTasks: List<Task> = emptyList(),
+    val unassignedTasks: List<Task> = emptyList(),
+    val liveStatus: LiveLessonStatus? = null,
+    val activeWeekCycle: WeekCycle = WeekCycle.EVERY_WEEK
+)
+
+data class NextLessonMatch(
+    val dueDate: LocalDate,
+    val linkedSlotId: String?,
+    val slot: Slot?
+)
+
+@Serializable
+data class UserPreferences(
+    val appProfile: AppProfile = AppProfile.STUDY,
+    val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
+    val isTwoWeekCycleEnabled: Boolean = false,
+    val semesterStartDateIso: String = "2026-09-01",
+    val invertWeekCycle: Boolean = false,
+    val showRussianHolidays: Boolean = true,
+    val skipHolidaysInSmartHomework: Boolean = true,
+    val isFirstLaunchCompleted: Boolean = false,
+    val cardStyle: ScheduleCardStyle = ScheduleCardStyle.OUTLINED,
+    val cardDensity: CardDensity = CardDensity.STANDARD,
+    val cornerRadiusDp: Int = 14,
+    val showBreaks: Boolean = true,
+    val showProgressBar: Boolean = true,
+    val scheduleViewMode: ScheduleViewMode = ScheduleViewMode.DAY_LIST,
+    val notificationsEnabled: Boolean = true,
+    val notifyMinutesBefore: Int = 10,
+    val eveningSummaryEnabled: Boolean = true,
+    val eveningSummaryTime: String = "20:00",
+    val taskRemindersEnabled: Boolean = true,
+    val isSaturdayWeekend: Boolean = false,
+    val activePresetId: String = SchedulePreset.DEFAULT_ID,
+    val showAllPresetsTasks: Boolean = false,
+    val focusSessionsCompleted: Int = 0,
+    val focusMinutesTotal: Int = 0
+) {
+    fun parseSemesterStartDate(): LocalDate = try {
+        LocalDate.parse(semesterStartDateIso)
+    } catch (_: Exception) {
+        LocalDate.of(2026, 9, 1)
+    }
+}
+
+data class BellTime(
+    val period: Int,
+    val startTime: String,
+    val endTime: String
+)

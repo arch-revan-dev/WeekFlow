@@ -1,0 +1,228 @@
+package com.weekflow.app.presentation.calendar
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.weekflow.app.domain.model.Activity
+import com.weekflow.app.domain.model.CalendarEvent
+import com.weekflow.app.domain.model.DayScheduleUiModel
+import com.weekflow.app.domain.model.SchedulePreset
+import com.weekflow.app.domain.model.Slot
+import com.weekflow.app.domain.model.Task
+import com.weekflow.app.domain.model.UserPreferences
+import com.weekflow.app.domain.model.Vacation
+import com.weekflow.app.domain.repository.PreferencesRepository
+import com.weekflow.app.domain.repository.ScheduleRepository
+import com.weekflow.app.domain.usecase.CalendarDayUiModel
+import com.weekflow.app.domain.usecase.GetDayScheduleUseCase
+import com.weekflow.app.domain.usecase.GetMonthCalendarUseCase
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import java.time.LocalDate
+import java.time.YearMonth
+
+data class CalendarUiState(
+    val currentYearMonth: YearMonth = YearMonth.now(),
+    val selectedDate: LocalDate = LocalDate.now(),
+    val monthDays: List<CalendarDayUiModel> = emptyList(),
+    val selectedDaySchedule: DayScheduleUiModel? = null,
+    val preferences: UserPreferences = UserPreferences(),
+    val allPresets: List<SchedulePreset> = listOf(SchedulePreset.DEFAULT_PRESET),
+    val activePreset: SchedulePreset = SchedulePreset.DEFAULT_PRESET,
+    val allActivities: List<Activity> = emptyList(),
+    val rawAllActivities: List<Activity> = emptyList(),
+    val rawAllSlots: List<Slot> = emptyList(),
+    val rawAllTasks: List<Task> = emptyList()
+)
+
+class CalendarViewModel(
+    private val scheduleRepository: ScheduleRepository,
+    private val preferencesRepository: PreferencesRepository,
+    private val getMonthCalendarUseCase: GetMonthCalendarUseCase,
+    private val getDayScheduleUseCase: GetDayScheduleUseCase
+) : ViewModel() {
+
+    private val _currentYearMonth = MutableStateFlow(YearMonth.now())
+    private val _selectedDate = MutableStateFlow(LocalDate.now())
+
+    val uiState: StateFlow<CalendarUiState> = combine(
+        _currentYearMonth,
+        _selectedDate,
+        preferencesRepository.userPreferences,
+        scheduleRepository.getAllPresets(),
+        scheduleRepository.getAllActivities(),
+        scheduleRepository.getAllSlots(),
+        scheduleRepository.getAllEvents(),
+        scheduleRepository.getAllTasks(),
+        scheduleRepository.getAllVacations()
+    ) { params ->
+        val ym = params[0] as YearMonth
+        val selectedDate = params[1] as LocalDate
+        val preferences = params[2] as UserPreferences
+        @Suppress("UNCHECKED_CAST")
+        val presets = params[3] as List<SchedulePreset>
+        @Suppress("UNCHECKED_CAST")
+        val rawActivities = params[4] as List<Activity>
+        @Suppress("UNCHECKED_CAST")
+        val rawSlots = params[5] as List<Slot>
+        @Suppress("UNCHECKED_CAST")
+        val rawEvents = params[6] as List<CalendarEvent>
+        @Suppress("UNCHECKED_CAST")
+        val rawTasks = params[7] as List<Task>
+        @Suppress("UNCHECKED_CAST")
+        val vacations = params[8] as List<Vacation>
+
+        val (effectivePreset, _) = SchedulePreset.resolveForDate(
+            date = selectedDate,
+            presets = presets,
+            activePresetId = preferences.activePresetId
+        )
+
+        val activities = rawActivities.filter { it.presetId == effectivePreset.id }
+        val slots = rawSlots.filter { it.presetId == effectivePreset.id }
+        val events = rawEvents.filter { it.presetId == effectivePreset.id }
+        val tasks = if (preferences.showAllPresetsTasks) {
+            rawTasks
+        } else {
+            rawTasks.filter { it.presetId == effectivePreset.id }
+        }
+
+        val monthDays = getMonthCalendarUseCase(
+            yearMonth = ym,
+            preferences = preferences,
+            activities = activities,
+            slots = slots,
+            events = events,
+            tasks = tasks,
+            vacations = vacations
+        )
+
+        val selectedDaySchedule = getDayScheduleUseCase(
+            targetDate = selectedDate,
+            currentTime = null,
+            preferences = preferences,
+            activities = activities,
+            slots = slots,
+            events = events,
+            tasks = tasks,
+            vacations = vacations
+        )
+
+        CalendarUiState(
+            currentYearMonth = ym,
+            selectedDate = selectedDate,
+            monthDays = monthDays,
+            selectedDaySchedule = selectedDaySchedule,
+            preferences = preferences,
+            allPresets = presets,
+            activePreset = effectivePreset,
+            allActivities = activities,
+            rawAllActivities = rawActivities,
+            rawAllSlots = rawSlots,
+            rawAllTasks = rawTasks
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = CalendarUiState()
+    )
+
+    fun onDateSelected(date: LocalDate) {
+        _selectedDate.value = date
+        if (date.year != _currentYearMonth.value.year || date.monthValue != _currentYearMonth.value.monthValue) {
+            _currentYearMonth.value = YearMonth.of(date.year, date.monthValue)
+        }
+    }
+
+    fun onPreviousMonth() {
+        _currentYearMonth.value = _currentYearMonth.value.minusMonths(1)
+    }
+
+    fun onNextMonth() {
+        _currentYearMonth.value = _currentYearMonth.value.plusMonths(1)
+    }
+
+    fun goToToday() {
+        val today = LocalDate.now()
+        _selectedDate.value = today
+        _currentYearMonth.value = YearMonth.now()
+    }
+
+    fun selectPreset(preset: SchedulePreset) {
+        viewModelScope.launch {
+            preferencesRepository.updateActivePresetId(preset.id)
+        }
+    }
+
+    fun savePreset(preset: SchedulePreset) {
+        viewModelScope.launch {
+            scheduleRepository.upsertPreset(preset)
+        }
+    }
+
+    fun duplicatePreset(sourcePresetId: String, newPreset: SchedulePreset) {
+        viewModelScope.launch {
+            scheduleRepository.duplicatePreset(sourcePresetId, newPreset)
+            preferencesRepository.updateActivePresetId(newPreset.id)
+        }
+    }
+
+    fun deletePreset(presetId: String) {
+        if (presetId == SchedulePreset.DEFAULT_ID) return
+        viewModelScope.launch {
+            scheduleRepository.deletePreset(presetId)
+            if (uiState.value.activePreset.id == presetId) {
+                preferencesRepository.updateActivePresetId(SchedulePreset.DEFAULT_ID)
+            }
+        }
+    }
+
+    fun toggleShowAllPresetsTasks(show: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.updateShowAllPresetsTasks(show)
+        }
+    }
+
+    fun toggleTask(task: Task) {
+        viewModelScope.launch {
+            scheduleRepository.toggleTaskCompleted(task.id, !task.isCompleted)
+        }
+    }
+
+    fun toggleSubtask(task: Task, subtaskId: String) {
+        val updatedSubtasks = task.subtasks.map {
+            if (it.id == subtaskId) it.copy(isDone = !it.isDone) else it
+        }
+        viewModelScope.launch {
+            scheduleRepository.upsertTask(task.copy(subtasks = updatedSubtasks))
+        }
+    }
+
+    fun postponeTaskToTomorrow(task: Task) {
+        val tomorrowIso = LocalDate.now().plusDays(1).toString()
+        viewModelScope.launch {
+            scheduleRepository.upsertTask(task.copy(dueDateIso = tomorrowIso))
+        }
+    }
+
+    fun deleteTask(taskId: String) {
+        viewModelScope.launch {
+            scheduleRepository.deleteTask(taskId)
+        }
+    }
+
+    fun recordFocusSession(minutes: Int) {
+        viewModelScope.launch {
+            preferencesRepository.recordCompletedFocusSession(minutes)
+        }
+    }
+
+    fun deleteEvent(eventId: String) {
+        viewModelScope.launch {
+            scheduleRepository.deleteEvent(eventId)
+        }
+    }
+}
