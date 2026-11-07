@@ -10,6 +10,7 @@ import com.weekflow.app.domain.model.TaskPriority
 import com.weekflow.app.domain.model.UserPreferences
 import com.weekflow.app.domain.repository.PreferencesRepository
 import com.weekflow.app.domain.repository.ScheduleRepository
+import com.weekflow.app.domain.repository.UndoSnapshotInfo
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -228,6 +229,24 @@ class TasksViewModel(
         }
         viewModelScope.launch {
             scheduleRepository.upsertTask(task.copy(subtasks = updatedSubtasks))
+        }
+    }
+
+    val lastUndoSnapshot: StateFlow<UndoSnapshotInfo?> = scheduleRepository.lastUndoSnapshot.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = null
+    )
+
+    fun restoreLastUndo() {
+        viewModelScope.launch {
+            scheduleRepository.restoreLastUndoSnapshot()
+        }
+    }
+
+    fun dismissUndo() {
+        viewModelScope.launch {
+            scheduleRepository.dismissUndoSnapshot()
         }
     }
 

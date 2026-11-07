@@ -8,7 +8,6 @@ import androidx.lifecycle.viewModelScope
 import com.weekflow.app.core.notifications.NotificationHelper
 import com.weekflow.app.core.notifications.NotificationScheduler
 import com.weekflow.app.data.serialization.AiPromptBuilder
-import com.weekflow.app.data.serialization.DemoScheduleProvider
 import com.weekflow.app.data.serialization.ValidationResult
 import com.weekflow.app.domain.model.Activity
 import com.weekflow.app.domain.model.AppProfile
@@ -23,6 +22,7 @@ import com.weekflow.app.domain.model.UserPreferences
 import com.weekflow.app.domain.model.Vacation
 import com.weekflow.app.domain.repository.PreferencesRepository
 import com.weekflow.app.domain.repository.ScheduleRepository
+import com.weekflow.app.domain.repository.UndoSnapshotInfo
 import com.weekflow.app.domain.usecase.ImportExportScheduleUseCase
 import com.weekflow.app.domain.usecase.ImportMode
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -294,22 +294,33 @@ class SettingsViewModel(
         }
     }
 
+    val lastUndoSnapshot: StateFlow<UndoSnapshotInfo?> = scheduleRepository.lastUndoSnapshot.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = null
+    )
+
+    fun restoreLastUndo() {
+        viewModelScope.launch {
+            val restored = scheduleRepository.restoreLastUndoSnapshot()
+            if (restored) {
+                rescheduleNotifications()
+                _uiEffect.emit(SettingsUiEffect.ShowToast("Предыдущее состояние восстановлено!"))
+            }
+        }
+    }
+
+    fun dismissUndo() {
+        viewModelScope.launch {
+            scheduleRepository.dismissUndoSnapshot()
+        }
+    }
+
     fun exportSchedule() {
         val targetPresetId = uiState.value.activePreset.id
         viewModelScope.launch {
             val jsonText = importExportScheduleUseCase.exportCleanJson(targetPresetId)
             _uiEffect.emit(SettingsUiEffect.ShareExportJson(jsonText))
-        }
-    }
-
-    fun loadDemoSchedule() {
-        val targetPresetId = uiState.value.activePreset.id
-        val presetName = uiState.value.activePreset.name
-        viewModelScope.launch {
-            val demo = DemoScheduleProvider.getDemoPayload()
-            importExportScheduleUseCase.executeImport(demo, ImportMode.REPLACE, targetPresetId)
-            rescheduleNotifications()
-            _uiEffect.emit(SettingsUiEffect.ShowToast("Демо-расписание загружено в «$presetName»!"))
         }
     }
 

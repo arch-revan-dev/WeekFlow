@@ -9,7 +9,17 @@ import com.weekflow.app.domain.model.Task
 import com.weekflow.app.domain.model.Vacation
 import kotlinx.coroutines.flow.Flow
 
+data class UndoSnapshotInfo(
+    val presetId: String,
+    val actionLabel: String,
+    val timestampMillis: Long
+)
+
 interface ScheduleRepository {
+    val lastUndoSnapshot: Flow<UndoSnapshotInfo?>
+    suspend fun restoreLastUndoSnapshot(): Boolean
+    suspend fun dismissUndoSnapshot()
+
     fun getAllPresets(): Flow<List<SchedulePreset>>
     suspend fun getPresetById(id: String): SchedulePreset?
     suspend fun upsertPreset(preset: SchedulePreset)

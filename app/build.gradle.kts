@@ -12,8 +12,8 @@ android {
         applicationId = "com.weekflow.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10
-        versionName = "4.1.2"
+        versionCode = 11
+        versionName = "4.1.3"
     }
 
     buildTypes {

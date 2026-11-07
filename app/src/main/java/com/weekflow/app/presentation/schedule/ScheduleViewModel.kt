@@ -2,7 +2,6 @@ package com.weekflow.app.presentation.schedule
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.weekflow.app.data.serialization.DemoScheduleProvider
 import com.weekflow.app.domain.model.Activity
 import com.weekflow.app.domain.model.CalendarEvent
 import com.weekflow.app.domain.model.DayScheduleUiModel
@@ -15,6 +14,7 @@ import com.weekflow.app.domain.model.Vacation
 import com.weekflow.app.domain.model.WeekCycle
 import com.weekflow.app.domain.repository.PreferencesRepository
 import com.weekflow.app.domain.repository.ScheduleRepository
+import com.weekflow.app.domain.repository.UndoSnapshotInfo
 import com.weekflow.app.domain.usecase.CalculateWeekCycleUseCase
 import com.weekflow.app.domain.usecase.GetDayScheduleUseCase
 import kotlinx.coroutines.delay
@@ -285,19 +285,27 @@ class ScheduleViewModel(
         }
     }
 
-    fun deleteTask(taskId: String) {
+    val lastUndoSnapshot: StateFlow<UndoSnapshotInfo?> = scheduleRepository.lastUndoSnapshot.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = null
+    )
+
+    fun restoreLastUndo() {
         viewModelScope.launch {
-            scheduleRepository.deleteTask(taskId)
+            scheduleRepository.restoreLastUndoSnapshot()
         }
     }
 
-    fun loadDemoSchedule() {
+    fun dismissUndo() {
         viewModelScope.launch {
-            val activeId = uiState.value.activePreset.id
-            scheduleRepository.replaceAllSchedule(
-                payload = DemoScheduleProvider.getDemoPayload(),
-                presetId = activeId
-            )
+            scheduleRepository.dismissUndoSnapshot()
+        }
+    }
+
+    fun deleteTask(taskId: String) {
+        viewModelScope.launch {
+            scheduleRepository.deleteTask(taskId)
         }
     }
 

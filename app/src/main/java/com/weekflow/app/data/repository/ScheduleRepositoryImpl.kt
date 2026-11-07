@@ -9,6 +9,7 @@ import com.weekflow.app.data.local.db.entity.PresetEntity
 import com.weekflow.app.data.local.db.entity.SlotEntity
 import com.weekflow.app.data.local.db.entity.TaskEntity
 import com.weekflow.app.data.local.db.entity.VacationEntity
+import com.weekflow.app.data.serialization.JsonImportExportManager
 import com.weekflow.app.domain.model.Activity
 import com.weekflow.app.domain.model.ActivityDto
 import com.weekflow.app.domain.model.CalendarEvent
@@ -21,10 +22,24 @@ import com.weekflow.app.domain.model.Task
 import com.weekflow.app.domain.model.TaskDto
 import com.weekflow.app.domain.model.Vacation
 import com.weekflow.app.domain.repository.ScheduleRepository
+import com.weekflow.app.domain.repository.UndoSnapshotInfo
 import com.weekflow.app.widget.WeekFlowWidgetUpdater
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import java.io.File
 import java.util.UUID
+
+@Serializable
+private data class PersistedUndoSnapshot(
+    val presetId: String,
+    val actionLabel: String,
+    val timestampMillis: Long,
+    val payload: CleanSchedulePayload
+)
 
 class ScheduleRepositoryImpl(
     private val database: WeekFlowDatabase,
@@ -37,6 +52,158 @@ class ScheduleRepositoryImpl(
     private val eventDao = database.eventDao()
     private val taskDao = database.taskDao()
     private val vacationDao = database.vacationDao()
+
+    private var inMemorySnapshot: PersistedUndoSnapshot? = null
+    private val _lastUndoSnapshot = MutableStateFlow<UndoSnapshotInfo?>(null)
+    override val lastUndoSnapshot: Flow<UndoSnapshotInfo?> = _lastUndoSnapshot.asStateFlow()
+
+    private val undoFile: File?
+        get() = context?.filesDir?.let { File(it, "weekflow_undo_snapshot.json") }
+
+    init {
+        loadPersistedUndoSnapshotIfRecent()
+    }
+
+    private fun loadPersistedUndoSnapshotIfRecent() {
+        try {
+            val file = undoFile ?: return
+            if (!file.exists()) return
+            val raw = file.readText()
+            val decoded = JsonImportExportManager.json.decodeFromString<PersistedUndoSnapshot>(raw)
+            // Keep persisted undo available for 24 hours across app restarts
+            if (System.currentTimeMillis() - decoded.timestampMillis <= 24 * 60 * 60 * 1000L) {
+                inMemorySnapshot = decoded
+                _lastUndoSnapshot.value = UndoSnapshotInfo(
+                    presetId = decoded.presetId,
+                    actionLabel = decoded.actionLabel,
+                    timestampMillis = decoded.timestampMillis
+                )
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    private suspend fun saveUndoSnapshot(presetId: String, actionLabel: String) {
+        val targetPreset = presetId.ifBlank { SchedulePreset.DEFAULT_ID }
+        val currentPayload = exportCleanSchedule(targetPreset)
+        if (currentPayload.activities.isEmpty() &&
+            currentPayload.slots.isEmpty() &&
+            currentPayload.events.isEmpty() &&
+            currentPayload.tasks.isEmpty()
+        ) {
+            return
+        }
+        val snapshot = PersistedUndoSnapshot(
+            presetId = targetPreset,
+            actionLabel = actionLabel,
+            timestampMillis = System.currentTimeMillis(),
+            payload = currentPayload
+        )
+        inMemorySnapshot = snapshot
+        _lastUndoSnapshot.value = UndoSnapshotInfo(
+            presetId = targetPreset,
+            actionLabel = actionLabel,
+            timestampMillis = snapshot.timestampMillis
+        )
+        try {
+            undoFile?.writeText(JsonImportExportManager.json.encodeToString(snapshot))
+        } catch (_: Exception) {
+        }
+    }
+
+    override suspend fun dismissUndoSnapshot() {
+        inMemorySnapshot = null
+        _lastUndoSnapshot.value = null
+        try {
+            undoFile?.delete()
+        } catch (_: Exception) {
+        }
+    }
+
+    override suspend fun restoreLastUndoSnapshot(): Boolean {
+        val snapshot = inMemorySnapshot ?: return false
+        val targetPreset = snapshot.presetId.ifBlank { SchedulePreset.DEFAULT_ID }
+        val payload = snapshot.payload
+
+        database.withTransaction {
+            slotDao.deleteByPresetId(targetPreset)
+            activityDao.deleteByPresetId(targetPreset)
+            eventDao.deleteByPresetId(targetPreset)
+            taskDao.deleteByPresetId(targetPreset)
+
+            val actEntities = payload.activities.map { act ->
+                ActivityEntity(
+                    id = act.id,
+                    name = act.name,
+                    shortName = act.shortName,
+                    category = act.category.name,
+                    colorHex = act.colorHex,
+                    defaultLocation = act.defaultLocation,
+                    defaultInstructor = act.defaultInstructor,
+                    defaultType = act.defaultType,
+                    presetId = targetPreset
+                )
+            }
+            activityDao.upsertAll(actEntities)
+
+            val slotEntities = payload.slots.map { slot ->
+                SlotEntity(
+                    id = slot.id,
+                    activityTypeId = slot.activityTypeId,
+                    dayOfWeek = slot.dayOfWeek,
+                    weekCycle = slot.weekCycle.name,
+                    startTime = slot.startTime,
+                    endTime = slot.endTime,
+                    customLocation = slot.customLocation,
+                    customInstructor = slot.customInstructor,
+                    customType = slot.customType,
+                    customNote = slot.customNote,
+                    periodOrder = slot.periodOrder,
+                    presetId = targetPreset
+                )
+            }
+            slotDao.upsertAll(slotEntities)
+
+            val eventEntities = payload.events.map { evt ->
+                EventEntity(
+                    id = evt.id,
+                    title = evt.title,
+                    dateIso = evt.dateIso,
+                    startTime = evt.startTime,
+                    endTime = evt.endTime,
+                    isAllDay = evt.isAllDay,
+                    colorHex = evt.colorHex,
+                    location = evt.location,
+                    description = evt.description,
+                    category = evt.category.name,
+                    presetId = targetPreset
+                )
+            }
+            eventDao.upsertAll(eventEntities)
+
+            val taskEntities = payload.tasks.map { task ->
+                TaskEntity.fromDomain(
+                    Task(
+                        id = task.id,
+                        title = task.title,
+                        dueDateIso = task.dueDateIso,
+                        linkedSlotId = task.linkedSlotId,
+                        linkedActivityId = task.linkedActivityId,
+                        isCompleted = task.isCompleted,
+                        note = task.note,
+                        priority = task.priority,
+                        subtasks = task.subtasks,
+                        presetId = targetPreset
+                    )
+                )
+            }
+            taskDao.upsertAll(taskEntities)
+        }
+
+        dismissUndoSnapshot()
+        notifyWidget()
+        return true
+    }
 
     private suspend fun notifyWidget() {
         context?.let { ctx ->
@@ -122,6 +289,10 @@ class ScheduleRepositoryImpl(
     }
 
     override suspend fun deleteActivity(id: String) {
+        val existing = activityDao.getById(id)
+        if (existing != null) {
+            saveUndoSnapshot(existing.presetId, "Удалён предмет «${existing.name.take(24)}»")
+        }
         activityDao.deleteById(id)
         notifyWidget()
     }
@@ -144,6 +315,10 @@ class ScheduleRepositoryImpl(
     }
 
     override suspend fun deleteSlot(id: String) {
+        val existing = slotDao.getById(id)
+        if (existing != null) {
+            saveUndoSnapshot(existing.presetId, "Удалено занятие (${existing.startTime}–${existing.endTime})")
+        }
         slotDao.deleteById(id)
         notifyWidget()
     }
@@ -166,6 +341,10 @@ class ScheduleRepositoryImpl(
     }
 
     override suspend fun deleteEvent(id: String) {
+        val existing = eventDao.getById(id)
+        if (existing != null) {
+            saveUndoSnapshot(existing.presetId, "Удалено событие «${existing.title.take(24)}»")
+        }
         eventDao.deleteById(id)
         notifyWidget()
     }
@@ -197,11 +376,17 @@ class ScheduleRepositoryImpl(
     }
 
     override suspend fun deleteTask(id: String) {
+        val existing = taskDao.getById(id)
+        if (existing != null) {
+            saveUndoSnapshot(existing.presetId, "Удалена задача «${existing.title.take(24)}»")
+        }
         taskDao.deleteById(id)
         notifyWidget()
     }
 
     override suspend fun deleteCompletedTasks(presetId: String?) {
+        val targetPreset = presetId?.takeIf { it.isNotBlank() } ?: SchedulePreset.DEFAULT_ID
+        saveUndoSnapshot(targetPreset, "Очищены выполненные задачи")
         if (presetId.isNullOrBlank()) {
             taskDao.deleteCompleted()
         } else {
@@ -233,6 +418,7 @@ class ScheduleRepositoryImpl(
 
     override suspend fun replaceAllSchedule(payload: CleanSchedulePayload, presetId: String) {
         val targetPreset = presetId.ifBlank { SchedulePreset.DEFAULT_ID }
+        saveUndoSnapshot(targetPreset, "Замена расписания")
         database.withTransaction {
             // Очищаем данные только выбранного пресета
             slotDao.deleteByPresetId(targetPreset)

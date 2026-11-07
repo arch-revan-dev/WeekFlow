@@ -72,6 +72,7 @@ import com.weekflow.app.core.designsystem.components.IosSegmentedControl
 import com.weekflow.app.core.designsystem.components.LessonSlotCard
 import com.weekflow.app.core.designsystem.components.LiveLessonBanner
 import com.weekflow.app.core.designsystem.components.TaskItemRow
+import com.weekflow.app.core.designsystem.components.UndoIncidentBanner
 import com.weekflow.app.core.designsystem.components.WeekStripHeader
 import com.weekflow.app.core.localization.LocalAppProfile
 import com.weekflow.app.core.util.ColorParser
@@ -102,6 +103,7 @@ fun ScheduleScreen(
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val undoSnapshot by viewModel.lastUndoSnapshot.collectAsState()
     val iosColors = LocalIosColors.current
     val appProfile = LocalAppProfile.current
     val haptic = LocalHapticFeedback.current
@@ -354,6 +356,17 @@ fun ScheduleScreen(
                 .fillMaxSize()
                 .padding(top = innerPadding.calculateTopPadding())
         ) {
+            AnimatedVisibility(visible = undoSnapshot != null) {
+                undoSnapshot?.let { snap ->
+                    UndoIncidentBanner(
+                        snapshot = snap,
+                        onUndoClick = { viewModel.restoreLastUndo() },
+                        onDismissClick = { viewModel.dismissUndo() },
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
             // Optional banner if date has an auto-scheduled preset that was manually overridden
             val scheduledForDate = uiState.dateScheduledPreset
             if (scheduledForDate != null && scheduledForDate.id != uiState.activePreset.id) {
@@ -633,10 +646,7 @@ fun ScheduleScreen(
                                 EmptyDayScheduleCard(
                                     appProfileTitle = appProfile.pluralGenitive,
                                     onAddLessonClick = { onAddNewSlot(uiState.selectedDate.dayOfWeek.value) },
-                                    onAddEventClick = { onAddNewEvent(uiState.selectedDate.toString()) },
-                                    onLoadDemoClick = if (uiState.allActivities.isEmpty() && uiState.allSlots.isEmpty()) {
-                                        { viewModel.loadDemoSchedule() }
-                                    } else null
+                                    onAddEventClick = { onAddNewEvent(uiState.selectedDate.toString()) }
                                 )
                             }
                         }
@@ -836,7 +846,6 @@ fun EmptyDayScheduleCard(
     appProfileTitle: String,
     onAddLessonClick: () -> Unit,
     onAddEventClick: () -> Unit,
-    onLoadDemoClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val iosColors = LocalIosColors.current
@@ -911,35 +920,6 @@ fun EmptyDayScheduleCard(
                     fontWeight = FontWeight.SemiBold,
                     color = iosColors.textPrimary
                 )
-            }
-        }
-
-        if (onLoadDemoClick != null) {
-            Spacer(modifier = Modifier.height(14.dp))
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(IosBlue.copy(alpha = 0.12f))
-                    .clickable { onLoadDemoClick() }
-                    .padding(horizontal = 16.dp, vertical = 9.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.AutoAwesome,
-                        contentDescription = null,
-                        tint = IosBlue,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Text(
-                        text = "Загрузить демо-расписание",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = IosBlue
-                    )
-                }
             }
         }
     }

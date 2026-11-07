@@ -72,6 +72,7 @@ import com.weekflow.app.core.designsystem.LocalIosColors
 import com.weekflow.app.core.designsystem.components.FocusTimerDialog
 import com.weekflow.app.core.designsystem.components.IosSegmentedControl
 import com.weekflow.app.core.designsystem.components.TaskItemRow
+import com.weekflow.app.core.designsystem.components.UndoIncidentBanner
 import com.weekflow.app.core.localization.LocalAppProfile
 import com.weekflow.app.core.util.ColorParser
 import com.weekflow.app.domain.model.Activity
@@ -92,6 +93,7 @@ fun TasksScreen(
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val undoSnapshot by viewModel.lastUndoSnapshot.collectAsState()
     val iosColors = LocalIosColors.current
     val appProfile = LocalAppProfile.current
     val haptic = LocalHapticFeedback.current
@@ -281,6 +283,17 @@ fun TasksScreen(
                 .fillMaxSize()
                 .padding(top = innerPadding.calculateTopPadding())
         ) {
+            AnimatedVisibility(visible = undoSnapshot != null) {
+                undoSnapshot?.let { snap ->
+                    UndoIncidentBanner(
+                        snapshot = snap,
+                        onUndoClick = { viewModel.restoreLastUndo() },
+                        onDismissClick = { viewModel.dismissUndo() },
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
             // Search Bar (Expandable)
             AnimatedVisibility(visible = showSearchBar) {
                 OutlinedTextField(

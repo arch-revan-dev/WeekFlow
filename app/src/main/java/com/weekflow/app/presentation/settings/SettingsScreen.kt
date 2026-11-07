@@ -35,6 +35,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Check
@@ -93,6 +94,7 @@ import com.weekflow.app.core.designsystem.components.IosDatePickerButton
 import com.weekflow.app.core.designsystem.components.IosSegmentedControl
 import com.weekflow.app.core.designsystem.components.IosWheelTimePickerDialog
 import com.weekflow.app.core.designsystem.components.LessonSlotCard
+import com.weekflow.app.core.designsystem.components.UndoIncidentBanner
 import com.weekflow.app.core.designsystem.iosSwitchColors
 import com.weekflow.app.core.util.ColorParser
 import com.weekflow.app.data.serialization.ValidationResult
@@ -121,6 +123,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val undoSnapshot by viewModel.lastUndoSnapshot.collectAsState()
     val iosColors = LocalIosColors.current
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -258,6 +261,15 @@ fun SettingsScreen(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            if (undoSnapshot != null) {
+                item(key = "undo_banner") {
+                    UndoIncidentBanner(
+                        snapshot = undoSnapshot!!,
+                        onUndoClick = { viewModel.restoreLastUndo() },
+                        onDismissClick = { viewModel.dismissUndo() }
+                    )
+                }
+            }
             // 1. Персонализация и Профиль
             item(key = "section_personalization") {
                 SettingsSection(title = "ПЕРСОНАЛИЗАЦИЯ И ПРОФИЛЬ") {
@@ -623,17 +635,19 @@ fun SettingsScreen(
                         iconTint = IosGreen,
                         onClick = { viewModel.exportSchedule() }
                     )
-                    SettingsDivider()
-                    SettingsButtonRow(
-                        icon = Icons.Rounded.AutoAwesome,
-                        label = "Загрузить демо-расписание",
-                        sublabel = "Заполнить активный пресет готовым примером",
-                        iconTint = IosOrange,
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            viewModel.loadDemoSchedule()
-                        }
-                    )
+                    if (undoSnapshot != null) {
+                        SettingsDivider()
+                        SettingsButtonRow(
+                            icon = Icons.AutoMirrored.Rounded.Undo,
+                            label = "Отменить: ${undoSnapshot!!.actionLabel}",
+                            sublabel = "Вернуть данные до последнего удаления или замены",
+                            iconTint = IosOrange,
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                viewModel.restoreLastUndo()
+                            }
+                        )
+                    }
                 }
             }
 
