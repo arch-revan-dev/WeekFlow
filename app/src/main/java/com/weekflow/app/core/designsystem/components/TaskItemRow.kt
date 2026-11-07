@@ -1,5 +1,6 @@
 package com.weekflow.app.core.designsystem.components
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
@@ -9,6 +10,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -31,7 +34,6 @@ import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material.icons.rounded.Update
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -43,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -62,6 +65,7 @@ import com.weekflow.app.domain.model.Task
 import com.weekflow.app.domain.model.TaskPriority
 import java.time.LocalDate
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TaskItemRow(
     task: Task,
@@ -118,16 +122,17 @@ fun TaskItemRow(
             .border(BorderStroke(0.8.dp, cardBorderColor), RoundedCornerShape(14.dp))
             .clickable { onClick() }
             .alpha(contentAlpha)
-            .padding(12.dp)
+            .padding(horizontal = 14.dp, vertical = 12.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.Top
         ) {
-            // TickTick Circular Checkbox
+            // Circular Priority Checkbox aligned with top title line
             Box(
                 modifier = Modifier
-                    .size(24.dp)
+                    .padding(top = 1.dp)
+                    .size(23.dp)
                     .clip(CircleShape)
                     .background(checkboxBgColor)
                     .border(
@@ -155,12 +160,14 @@ fun TaskItemRow(
 
             Spacer(modifier = Modifier.width(12.dp))
 
+            // Main Content Column using 100% of remaining width (no cramped right icon strip)
             Column(modifier = Modifier.weight(1f)) {
                 // Task title
                 Text(
                     text = task.title,
                     fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium,
+                    lineHeight = 20.sp,
+                    fontWeight = FontWeight.SemiBold,
                     color = if (task.isCompleted) iosColors.textSecondary else iosColors.textPrimary,
                     textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
                     maxLines = if (isExpanded) Int.MAX_VALUE else 2,
@@ -188,122 +195,6 @@ fun TaskItemRow(
                             }
                         }
                     )
-                }
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                // Bottom row: Priority chip + Subject chip + Due date badge
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    // Priority chip if non-default
-                    if (task.priority != TaskPriority.NONE) {
-                        val (label, pColor) = when (task.priority) {
-                            TaskPriority.HIGH -> "Высокий" to Color(0xFFFF3B30)
-                            TaskPriority.MEDIUM -> "Средний" to Color(0xFFFF9500)
-                            TaskPriority.LOW -> "Низкий" to Color(0xFF007AFF)
-                            TaskPriority.NONE -> "" to Color.Transparent
-                        }
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(pColor.copy(alpha = 0.14f))
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = label,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = pColor
-                            )
-                        }
-                    }
-
-                    // Subject chip
-                    linkedActivity?.let { act ->
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(activityColor.copy(alpha = 0.14f))
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = act.shortName.ifBlank { act.name },
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = activityColor,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-
-                    // Due date badge
-                    taskDueDate?.let { dueDate ->
-                        val dateBadgeColor = when {
-                            isOverdue -> IosRed
-                            isDueToday -> IosOrange
-                            else -> iosColors.textSecondary
-                        }
-                        val dateText = when {
-                            isOverdue -> "Просрочено (${DateTimeUtils.formatDateWithDay(dueDate)})"
-                            isDueToday -> "Сегодня"
-                            dueDate.isEqual(today.plusDays(1)) -> "Завтра"
-                            else -> DateTimeUtils.formatDateWithDay(dueDate)
-                        }
-
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Event,
-                                contentDescription = null,
-                                tint = dateBadgeColor,
-                                modifier = Modifier.size(12.dp)
-                            )
-                            Spacer(modifier = Modifier.width(3.dp))
-                            Text(
-                                text = dateText,
-                                fontSize = 11.sp,
-                                fontWeight = if (isOverdue || isDueToday) FontWeight.SemiBold else FontWeight.Normal,
-                                color = dateBadgeColor
-                            )
-                        }
-                    }
-
-                    // Subtasks count badge
-                    if (task.subtasks.isNotEmpty()) {
-                        val doneCount = task.subtasks.count { it.isDone }
-                        val allDone = doneCount == task.subtasks.size
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(
-                                    if (allDone) IosGreen.copy(alpha = 0.14f)
-                                    else iosColors.cardSecondary
-                                )
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(3.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Checklist,
-                                    contentDescription = null,
-                                    tint = if (allDone) IosGreen else iosColors.textSecondary,
-                                    modifier = Modifier.size(11.dp)
-                                )
-                                Text(
-                                    text = "$doneCount/${task.subtasks.size}",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = if (allDone) IosGreen else iosColors.textSecondary
-                                )
-                            }
-                        }
-                    }
                 }
 
                 // Inline Subtask rows if any
@@ -349,108 +240,293 @@ fun TaskItemRow(
                     }
                 }
 
-                // Expand / Collapse inline toggle if content is long
-                if (hasLongContent) {
-                    Spacer(modifier = Modifier.height(4.dp))
+                val hasMetadata = task.priority != TaskPriority.NONE ||
+                    linkedActivity != null ||
+                    taskDueDate != null ||
+                    task.subtasks.isNotEmpty() ||
+                    hasLongContent
+
+                if (hasMetadata) {
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Bottom metadata row: FlowRow with non-wrapping badges + Expand toggle
                     Row(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .clickable {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                isExpanded = !isExpanded
-                            }
-                            .padding(vertical = 2.dp, horizontal = 4.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(
-                            text = if (isExpanded) "Свернуть" else "Показать полностью",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = IosBlue
-                        )
-                        Icon(
-                            imageVector = if (isExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
-                            contentDescription = null,
-                            tint = IosBlue,
-                            modifier = Modifier.size(14.dp)
-                        )
+                        FlowRow(
+                            modifier = Modifier.weight(1f),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            // Priority chip if non-default
+                            if (task.priority != TaskPriority.NONE) {
+                                val (label, pColor) = when (task.priority) {
+                                    TaskPriority.HIGH -> "Высокий" to Color(0xFFFF3B30)
+                                    TaskPriority.MEDIUM -> "Средний" to Color(0xFFFF9500)
+                                    TaskPriority.LOW -> "Низкий" to Color(0xFF007AFF)
+                                    TaskPriority.NONE -> "" to Color.Transparent
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(pColor.copy(alpha = 0.14f))
+                                        .padding(horizontal = 7.dp, vertical = 2.5.dp)
+                                ) {
+                                    Text(
+                                        text = label,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = pColor,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                }
+                            }
+
+                            // Subject chip
+                            linkedActivity?.let { act ->
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(activityColor.copy(alpha = 0.14f))
+                                        .padding(horizontal = 7.dp, vertical = 2.5.dp)
+                                ) {
+                                    Text(
+                                        text = act.shortName.ifBlank { act.name },
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = activityColor,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+
+                            // Due date badge (non-wrapping so date never breaks onto 2 lines)
+                            taskDueDate?.let { dueDate ->
+                                val dateBadgeColor = when {
+                                    isOverdue -> IosRed
+                                    isDueToday -> IosOrange
+                                    else -> iosColors.textSecondary
+                                }
+                                val dateText = when {
+                                    isOverdue -> "Просрочено • ${DateTimeUtils.formatDateWithDay(dueDate)}"
+                                    isDueToday -> "Сегодня"
+                                    dueDate.isEqual(today.plusDays(1)) -> "Завтра"
+                                    else -> DateTimeUtils.formatDateWithDay(dueDate)
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(
+                                            when {
+                                                isOverdue -> IosRed.copy(alpha = 0.12f)
+                                                isDueToday -> IosOrange.copy(alpha = 0.12f)
+                                                else -> Color.Transparent
+                                            }
+                                        )
+                                        .padding(
+                                            horizontal = if (isOverdue || isDueToday) 6.dp else 2.dp,
+                                            vertical = 2.5.dp
+                                        )
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Event,
+                                            contentDescription = null,
+                                            tint = dateBadgeColor,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = dateText,
+                                            fontSize = 11.sp,
+                                            fontWeight = if (isOverdue || isDueToday) FontWeight.SemiBold else FontWeight.Medium,
+                                            color = dateBadgeColor,
+                                            maxLines = 1,
+                                            softWrap = false
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Subtasks count badge
+                            if (task.subtasks.isNotEmpty()) {
+                                val doneCount = task.subtasks.count { it.isDone }
+                                val allDone = doneCount == task.subtasks.size
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(
+                                            if (allDone) IosGreen.copy(alpha = 0.14f)
+                                            else iosColors.cardSecondary
+                                        )
+                                        .padding(horizontal = 6.dp, vertical = 2.5.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Checklist,
+                                            contentDescription = null,
+                                            tint = if (allDone) IosGreen else iosColors.textSecondary,
+                                            modifier = Modifier.size(11.dp)
+                                        )
+                                        Text(
+                                            text = "$doneCount/${task.subtasks.size}",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (allDone) IosGreen else iosColors.textSecondary,
+                                            maxLines = 1,
+                                            softWrap = false
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Expand / Collapse inline toggle if content is long
+                        if (hasLongContent) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(IosBlue.copy(alpha = 0.10f))
+                                    .clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        isExpanded = !isExpanded
+                                    }
+                                    .padding(vertical = 3.dp, horizontal = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    text = if (isExpanded) "Свернуть" else "Ещё",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = IosBlue,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                                Icon(
+                                    imageVector = if (isExpanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                                    contentDescription = null,
+                                    tint = IosBlue,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Inline Quick Actions shown ONLY when card is explicitly expanded
+                AnimatedVisibility(visible = isExpanded) {
+                    Column {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            if (onEditClick != null) {
+                                InlineTaskActionChip(
+                                    icon = Icons.Rounded.Edit,
+                                    label = "Изменить",
+                                    tint = IosBlue,
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        onEditClick()
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            if (onFocusTimerClick != null && !task.isCompleted) {
+                                InlineTaskActionChip(
+                                    icon = Icons.Rounded.HourglassEmpty,
+                                    label = "Фокус",
+                                    tint = IosBlue,
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        onFocusTimerClick()
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            if (onPostponeTomorrowClick != null && !task.isCompleted) {
+                                InlineTaskActionChip(
+                                    icon = Icons.Rounded.Update,
+                                    label = "Завтра",
+                                    tint = IosOrange,
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        onPostponeTomorrowClick()
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            if (onDeleteClick != null) {
+                                InlineTaskActionChip(
+                                    icon = Icons.Rounded.DeleteOutline,
+                                    label = "Удалить",
+                                    tint = IosRed,
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        onDeleteClick()
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
                     }
                 }
             }
+        }
+    }
+}
 
-            // Quick actions (Edit, Focus timer, Postpone, Delete)
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(0.dp)
-            ) {
-                if (onEditClick != null) {
-                    IconButton(
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onEditClick()
-                        },
-                        modifier = Modifier.size(30.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Edit,
-                            contentDescription = "Редактировать",
-                            tint = iosColors.textSecondary,
-                            modifier = Modifier.size(15.dp)
-                        )
-                    }
-                }
-                if (onFocusTimerClick != null && !task.isCompleted) {
-                    IconButton(
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onFocusTimerClick()
-                        },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.HourglassEmpty,
-                            contentDescription = "Фокус таймер",
-                            tint = iosColors.textSecondary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
-
-                if (onPostponeTomorrowClick != null && !task.isCompleted) {
-                    IconButton(
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            onPostponeTomorrowClick()
-                        },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Update,
-                            contentDescription = "Перенести на завтра",
-                            tint = iosColors.textSecondary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
-
-                if (onDeleteClick != null) {
-                    IconButton(
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onDeleteClick()
-                        },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.DeleteOutline,
-                            contentDescription = "Удалить",
-                            tint = iosColors.textSecondary.copy(alpha = 0.7f),
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
-            }
+@Composable
+private fun InlineTaskActionChip(
+    icon: ImageVector,
+    label: String,
+    tint: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val iosColors = LocalIosColors.current
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(iosColors.cardSecondary)
+            .clickable { onClick() }
+            .padding(vertical = 6.dp, horizontal = 4.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = tint,
+                modifier = Modifier.size(13.dp)
+            )
+            Spacer(modifier = Modifier.width(3.dp))
+            Text(
+                text = label,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = tint,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
