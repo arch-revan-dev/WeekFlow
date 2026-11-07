@@ -30,7 +30,7 @@ val appModule = module {
             WeekFlowDatabase::class.java,
             WeekFlowDatabase.DATABASE_NAME
         )
-            .addMigrations(WeekFlowDatabase.MIGRATION_2_3)
+            .addMigrations(WeekFlowDatabase.MIGRATION_2_3, WeekFlowDatabase.MIGRATION_3_4)
             .addCallback(WeekFlowDatabase.DEFAULT_PRESET_CALLBACK)
             .fallbackToDestructiveMigration()
             .build()

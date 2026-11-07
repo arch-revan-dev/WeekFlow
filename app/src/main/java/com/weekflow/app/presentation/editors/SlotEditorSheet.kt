@@ -73,7 +73,9 @@ private fun resolveLessonTimesForPeriod(
     targetPeriod: Int,
     targetDayOfWeek: Int,
     existingSlots: List<Slot>,
-    fallbackPresets: List<Pair<String, String>>
+    fallbackPresets: List<Pair<String, String>>,
+    defaultDurationMin: Int = 45,
+    defaultBreakMin: Int = 10
 ): Pair<String, String> {
     if (targetPeriod <= 0) {
         return Pair("15:00", "16:30")
@@ -82,9 +84,9 @@ private fun resolveLessonTimesForPeriod(
     val numberedSlots = existingSlots.filter { it.periodOrder > 0 }
     if (numberedSlots.isEmpty()) {
         return fallbackPresets.getOrElse(targetPeriod - 1) {
-            val baseStartMin = 8 * 60 + 30 + (targetPeriod - 1) * 55
+            val baseStartMin = 8 * 60 + 30 + (targetPeriod - 1) * (defaultDurationMin + defaultBreakMin)
             val start = LocalTime.of((baseStartMin / 60) % 24, baseStartMin % 60)
-            val end = start.plusMinutes(45)
+            val end = start.plusMinutes(defaultDurationMin.toLong())
             String.format("%02d:%02d", start.hour, start.minute) to String.format("%02d:%02d", end.hour, end.minute)
         }
     }
@@ -120,7 +122,7 @@ private fun resolveLessonTimesForPeriod(
         .eachCount()
         .maxByOrNull { it.value }
         ?.key
-        ?: 45
+        ?: defaultDurationMin
 
     val breaks = mutableListOf<Int>()
     numberedSlots.groupBy { it.dayOfWeek }.values.forEach { dayList ->
@@ -141,7 +143,7 @@ private fun resolveLessonTimesForPeriod(
         .eachCount()
         .maxByOrNull { it.value }
         ?.key
-        ?: if (lessonDurationMin <= 50) 10 else 15
+        ?: defaultBreakMin
 
     // Find closest preceding lesson (prefer same day, then any day)
     val dayPreceding = numberedSlots
@@ -209,21 +211,14 @@ fun SlotEditorSheet(
     val appProfile = LocalAppProfile.current
     val haptic = LocalHapticFeedback.current
 
-    // Standard bell time presets for fallback when schedule is completely empty
-    val timePresets = listOf(
-        Pair("09:00", "10:35"),
-        Pair("10:45", "12:20"),
-        Pair("13:00", "14:35"),
-        Pair("14:45", "16:20"),
-        Pair("16:30", "18:05"),
-        Pair("18:15", "19:50"),
-        Pair("20:00", "21:35")
-    )
+    // Standard bell time presets from active AppProfile
+    val timePresets = appProfile.defaultBellTimes
 
-    val initialPeriod = remember(initialSlot?.id, defaultPeriodOrder, defaultDayOfWeek, existingSlots.size) {
+    val initialPeriod = remember(initialSlot?.id, defaultPeriodOrder, defaultDayOfWeek, existingSlots.size, appProfile) {
         when {
             initialSlot != null -> initialSlot.periodOrder
             defaultPeriodOrder != null -> defaultPeriodOrder
+            !appProfile.defaultUsePeriodNumbers -> 0
             defaultStartTime != null -> 1
             else -> {
                 val maxOnDay = existingSlots
@@ -233,12 +228,14 @@ fun SlotEditorSheet(
             }
         }
     }
-    val defaultTimesForPeriod = remember(initialPeriod, defaultDayOfWeek, existingSlots) {
+    val defaultTimesForPeriod = remember(initialPeriod, defaultDayOfWeek, existingSlots, appProfile) {
         resolveLessonTimesForPeriod(
             targetPeriod = initialPeriod,
             targetDayOfWeek = initialSlot?.dayOfWeek ?: defaultDayOfWeek,
             existingSlots = existingSlots,
-            fallbackPresets = timePresets
+            fallbackPresets = timePresets,
+            defaultDurationMin = appProfile.defaultDurationMinutes,
+            defaultBreakMin = appProfile.defaultBreakMinutes
         )
     }
 
@@ -322,7 +319,7 @@ fun SlotEditorSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Предмет / Занятие",
+                    text = appProfile.subjectTerm,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = iosColors.textSecondary
@@ -342,12 +339,12 @@ fun SlotEditorSheet(
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Edit,
-                            contentDescription = "Редактировать предмет",
+                            contentDescription = "Редактировать",
                             tint = IosBlue,
                             modifier = Modifier.size(14.dp)
                         )
                         Text(
-                            text = "Настроить предмет",
+                            text = "Настроить (${appProfile.subjectTerm.lowercase()})",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = IosBlue
@@ -449,7 +446,9 @@ fun SlotEditorSheet(
                                         targetPeriod = periodOrder,
                                         targetDayOfWeek = day,
                                         existingSlots = existingSlots,
-                                        fallbackPresets = timePresets
+                                        fallbackPresets = timePresets,
+                                        defaultDurationMin = appProfile.defaultDurationMinutes,
+                                        defaultBreakMin = appProfile.defaultBreakMinutes
                                     )
                                     startTime = resolved.first
                                     endTime = resolved.second
@@ -538,7 +537,9 @@ fun SlotEditorSheet(
                                 targetPeriod = num,
                                 targetDayOfWeek = dayOfWeek,
                                 existingSlots = existingSlots,
-                                fallbackPresets = timePresets
+                                fallbackPresets = timePresets,
+                                defaultDurationMin = appProfile.defaultDurationMinutes,
+                                defaultBreakMin = appProfile.defaultBreakMinutes
                             )
                             startTime = resolved.first
                             endTime = resolved.second
@@ -548,7 +549,9 @@ fun SlotEditorSheet(
                                 targetPeriod = num,
                                 targetDayOfWeek = dayOfWeek,
                                 existingSlots = existingSlots,
-                                fallbackPresets = timePresets
+                                fallbackPresets = timePresets,
+                                defaultDurationMin = appProfile.defaultDurationMinutes,
+                                defaultBreakMin = appProfile.defaultBreakMinutes
                             )
                             "$num $itemWord  •  $s – $e"
                         },
@@ -584,13 +587,13 @@ fun SlotEditorSheet(
                 )
             }
 
-            // 6. Custom Overrides (Location, Instructor, Type)
+            // 6. Custom Overrides (Location, Instructor, Type) with profile-aware terms & quick type chips
             OutlinedTextField(
                 value = customLocation,
                 onValueChange = { customLocation = it },
                 label = { Text(appProfile.locationTerm) },
                 placeholder = {
-                    Text(selectedActivity?.defaultLocation ?: "По умолчанию из предмета")
+                    Text(selectedActivity?.defaultLocation ?: appProfile.locationPlaceholder)
                 },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
@@ -601,22 +604,46 @@ fun SlotEditorSheet(
                 onValueChange = { customInstructor = it },
                 label = { Text(appProfile.instructorTerm) },
                 placeholder = {
-                    Text(selectedActivity?.defaultInstructor ?: "По умолчанию из предмета")
+                    Text(selectedActivity?.defaultInstructor ?: appProfile.instructorPlaceholder)
                 },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
 
-            OutlinedTextField(
-                value = customType,
-                onValueChange = { customType = it },
-                label = { Text("Тип занятия (Лекция / Практика)") },
-                placeholder = {
-                    Text(selectedActivity?.defaultType ?: "например, Лекция")
-                },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedTextField(
+                    value = customType,
+                    onValueChange = { customType = it },
+                    label = { Text("Формат / Тип (${appProfile.defaultLessonTypes.take(2).joinToString(" / ")})") },
+                    placeholder = {
+                        Text(selectedActivity?.defaultType ?: appProfile.defaultLessonTypes.firstOrNull() ?: "Урок")
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(appProfile.defaultLessonTypes) { typeOption ->
+                        val isChosen = customType.equals(typeOption, ignoreCase = true)
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (isChosen) IosBlue else iosColors.cardSecondary)
+                                .clickable {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    customType = if (isChosen) "" else typeOption
+                                }
+                                .padding(horizontal = 10.dp, vertical = 5.dp)
+                        ) {
+                            Text(
+                                text = typeOption,
+                                fontSize = 11.5.sp,
+                                fontWeight = if (isChosen) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isChosen) Color.White else iosColors.textPrimary
+                            )
+                        }
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.height(4.dp))
 

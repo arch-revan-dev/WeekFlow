@@ -32,6 +32,7 @@ interface PreferencesRepository {
     suspend fun updateEveningSummaryEnabled(enabled: Boolean)
     suspend fun updateEveningSummaryTime(time: String)
     suspend fun updateTaskRemindersEnabled(enabled: Boolean)
+    suspend fun updateTaskRemindersTime(time: String)
     suspend fun updateSaturdayWeekend(isWeekend: Boolean)
 
     suspend fun updateActivePresetId(presetId: String)

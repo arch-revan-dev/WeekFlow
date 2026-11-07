@@ -32,6 +32,9 @@ class DetectActiveOrRecentActivityUseCase(
         currentTime: LocalTime = LocalTime.now()
     ): DetectedActivity? {
         if (allSlots.isEmpty()) return null
+        if (calculateNextLessonDateUseCase.isOffDay(currentDate, preferences, vacations)) {
+            return null
+        }
 
         val currentCycle = calculateWeekCycleUseCase(currentDate, preferences)
         val todaySlots = allSlots.filter { slot ->

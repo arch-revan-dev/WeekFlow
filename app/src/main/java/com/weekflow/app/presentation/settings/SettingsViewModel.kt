@@ -168,6 +168,8 @@ class SettingsViewModel(
     fun onProfileChanged(profile: AppProfile) {
         viewModelScope.launch {
             preferencesRepository.updateAppProfile(profile)
+            val currentPreset = uiState.value.activePreset
+            scheduleRepository.upsertPreset(currentPreset.copy(appProfile = profile))
         }
     }
 
@@ -240,10 +242,10 @@ class SettingsViewModel(
     // AI & JSON Features
     fun copyAiPrompt(context: Context) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = ClipData.newPlainText("WeekFlow AI Prompt", AiPromptBuilder.buildSystemPrompt())
+        val clip = ClipData.newPlainText("WeekFlow AI Prompt", AiPromptBuilder.buildSystemPrompt(uiState.value.activePreset))
         clipboard.setPrimaryClip(clip)
         viewModelScope.launch {
-            _uiEffect.emit(SettingsUiEffect.ShowToast("Системный промпт скопирован в буфер обмена!"))
+            _uiEffect.emit(SettingsUiEffect.ShowToast("Системный промпт v4.2 скопирован в буфер обмена!"))
         }
     }
 
@@ -391,10 +393,10 @@ class SettingsViewModel(
         }
     }
 
-    fun sendTestNotification() {
-        notificationHelper.showTestNotification()
+    fun onTaskRemindersTimeChanged(time: String) {
         viewModelScope.launch {
-            _uiEffect.emit(SettingsUiEffect.ShowToast("Тестовое уведомление отправлено!"))
+            preferencesRepository.updateTaskRemindersTime(time)
+            rescheduleNotifications()
         }
     }
 }

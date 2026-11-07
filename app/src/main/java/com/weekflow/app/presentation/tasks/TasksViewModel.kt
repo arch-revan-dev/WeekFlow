@@ -11,6 +11,7 @@ import com.weekflow.app.domain.model.UserPreferences
 import com.weekflow.app.domain.repository.PreferencesRepository
 import com.weekflow.app.domain.repository.ScheduleRepository
 import com.weekflow.app.domain.repository.UndoSnapshotInfo
+import com.weekflow.app.core.util.DateTimeUtils
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -21,12 +22,13 @@ import java.time.LocalDate
 import java.util.UUID
 
 data class TasksUiState(
-    val selectedTab: Int = 0, // 0 = Актуальные, 1 = По предметам, 2 = Выполненные
+    val selectedTab: Int = 0, // 0 = Актуальные, 1 = По дням, 2 = По предметам, 3 = Выполненные
     val searchQuery: String = "",
     val overdueTasks: List<Task> = emptyList(),
     val todayAndTomorrowTasks: List<Task> = emptyList(),
     val nextWeekTasks: List<Task> = emptyList(),
     val laterTasks: List<Task> = emptyList(),
+    val tasksByDate: List<Pair<LocalDate?, List<Task>>> = emptyList(),
     val tasksByActivity: Map<Activity, List<Task>> = emptyMap(),
     val unassignedTasks: List<Task> = emptyList(),
     val completedTasks: List<Task> = emptyList(),
@@ -126,7 +128,15 @@ class TasksViewModel(
             }
         }
 
-        // Grouping for Tab 1: "По предметам"
+        // Grouping for Tab 1: "По дням"
+        val byDateMap = pending.groupBy { it.parseDueDate() }
+        val sortedByDate: List<Pair<LocalDate?, List<Task>>> = byDateMap.entries
+            .sortedWith(compareBy(nullsLast()) { it.key })
+            .map { (date, taskList) ->
+                date to taskList.sortedWith(compareBy({ it.priority.ordinal }, { it.title }))
+            }
+
+        // Grouping for Tab 2: "По предметам"
         val byActivity = mutableMapOf<Activity, MutableList<Task>>()
         val unassigned = mutableListOf<Task>()
 
@@ -147,6 +157,7 @@ class TasksViewModel(
             todayAndTomorrowTasks = todayAndTomorrow.sortedWith(compareBy({ it.priority.ordinal }, { it.dueDateIso })),
             nextWeekTasks = nextWeek.sortedWith(compareBy({ it.priority.ordinal }, { it.dueDateIso })),
             laterTasks = later.sortedWith(compareBy({ it.priority.ordinal }, { it.dueDateIso })),
+            tasksByDate = sortedByDate,
             tasksByActivity = byActivity.mapValues { (_, taskList) ->
                 taskList.sortedWith(compareBy({ it.priority.ordinal }, { it.dueDateIso }))
             },
@@ -288,6 +299,39 @@ class TasksViewModel(
     fun upsertTask(task: Task) {
         viewModelScope.launch {
             scheduleRepository.upsertTask(task)
+        }
+    }
+
+    fun buildFormattedTasksByDays(singleDayFilter: Pair<LocalDate?, List<Task>>? = null): String {
+        val state = uiState.value
+        val actMap = state.rawAllActivities.associateBy { it.id }
+        val groups = if (singleDayFilter != null) {
+            listOf(singleDayFilter)
+        } else {
+            state.tasksByDate
+        }
+        if (groups.isEmpty()) return ""
+
+        return buildString {
+            groups.forEachIndexed { idx, (date, tasks) ->
+                if (idx > 0) append("\n\n")
+                val header = if (date != null) {
+                    val dayShort = DateTimeUtils.getDayOfWeekShort(date.dayOfWeek.value)
+                    val fullDate = DateTimeUtils.formatShortDayMonth(date)
+                    "📅 $dayShort ($fullDate) — задачи:"
+                } else {
+                    "📌 Без срока — задачи:"
+                }
+                append(header)
+                tasks.forEach { task ->
+                    val subjectName = task.linkedActivityId?.let { actMap[it]?.name } ?: "Общее"
+                    val noteSuffix = task.note?.takeIf { it.isNotBlank() }?.let { " ($it)" } ?: ""
+                    append("\n• $subjectName: ${task.title}$noteSuffix")
+                    task.subtasks.filter { !it.isDone }.forEach { sub ->
+                        append("\n   ◦ ${sub.title}")
+                    }
+                }
+            }
         }
     }
 }

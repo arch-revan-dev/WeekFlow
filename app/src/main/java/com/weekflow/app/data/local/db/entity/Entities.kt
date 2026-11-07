@@ -7,6 +7,7 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.weekflow.app.domain.model.Activity
 import com.weekflow.app.domain.model.ActivityCategory
+import com.weekflow.app.domain.model.AppProfile
 import com.weekflow.app.domain.model.CalendarEvent
 import com.weekflow.app.domain.model.SchedulePreset
 import com.weekflow.app.domain.model.Slot
@@ -32,17 +33,31 @@ data class PresetEntity(
     val colorHex: String,
     val autoStartDateIso: String?,
     val autoEndDateIso: String?,
-    val createdAt: Long
+    val createdAt: Long,
+    @ColumnInfo(defaultValue = "'STUDY'")
+    val appProfile: String = AppProfile.STUDY.name
 ) {
-    fun toDomain(): SchedulePreset = SchedulePreset(
-        id = id,
-        name = name,
-        iconEmoji = iconEmoji,
-        colorHex = colorHex,
-        autoStartDateIso = autoStartDateIso,
-        autoEndDateIso = autoEndDateIso,
-        createdAt = createdAt
-    )
+    fun toDomain(): SchedulePreset {
+        val parsedProfile = try {
+            AppProfile.valueOf(appProfile)
+        } catch (_: Exception) {
+            if (iconEmoji == "🏋️" || name.contains("Упр", ignoreCase = true) || name.contains("Спорт", ignoreCase = true)) {
+                AppProfile.HEALTH
+            } else {
+                AppProfile.STUDY
+            }
+        }
+        return SchedulePreset(
+            id = id,
+            name = name,
+            iconEmoji = iconEmoji,
+            colorHex = colorHex,
+            autoStartDateIso = autoStartDateIso,
+            autoEndDateIso = autoEndDateIso,
+            createdAt = createdAt,
+            appProfile = parsedProfile
+        )
+    }
 
     companion object {
         fun fromDomain(domain: SchedulePreset): PresetEntity = PresetEntity(
@@ -52,7 +67,8 @@ data class PresetEntity(
             colorHex = domain.colorHex,
             autoStartDateIso = domain.autoStartDateIso,
             autoEndDateIso = domain.autoEndDateIso,
-            createdAt = domain.createdAt
+            createdAt = domain.createdAt,
+            appProfile = domain.appProfile.name
         )
     }
 }

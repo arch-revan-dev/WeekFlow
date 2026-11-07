@@ -1,5 +1,9 @@
 package com.weekflow.app.presentation.tasks
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -31,6 +35,7 @@ import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.HourglassEmpty
@@ -57,6 +62,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -75,6 +81,8 @@ import com.weekflow.app.core.designsystem.components.TaskItemRow
 import com.weekflow.app.core.designsystem.components.UndoIncidentBanner
 import com.weekflow.app.core.localization.LocalAppProfile
 import com.weekflow.app.core.util.ColorParser
+import com.weekflow.app.core.util.DateTimeUtils
+import java.time.LocalDate
 import com.weekflow.app.domain.model.Activity
 import com.weekflow.app.domain.model.Task
 import com.weekflow.app.domain.model.TaskPriority
@@ -96,8 +104,19 @@ fun TasksScreen(
     val undoSnapshot by viewModel.lastUndoSnapshot.collectAsState()
     val iosColors = LocalIosColors.current
     val appProfile = LocalAppProfile.current
+    val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val focusManager = LocalFocusManager.current
+
+    fun copyTextToClipboard(text: String, toastMessage: String) {
+        if (text.isBlank()) {
+            Toast.makeText(context, "Нет актуальных задач для копирования", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Задачи WeekFlow", text))
+        Toast.makeText(context, toastMessage, Toast.LENGTH_SHORT).show()
+    }
 
     val activityMap = uiState.rawAllActivities.associateBy { it.id }
 
@@ -204,6 +223,22 @@ fun TasksScreen(
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            val formatted = viewModel.buildFormattedTasksByDays()
+                            copyTextToClipboard(formatted, "Задачи по дням скопированы в буфер обмена!")
+                        },
+                        modifier = Modifier.size(34.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.ContentCopy,
+                            contentDescription = "Скопировать задачи по дням",
+                            tint = IosBlue,
+                            modifier = Modifier.size(19.dp)
+                        )
+                    }
+
                     IconButton(
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -325,9 +360,9 @@ fun TasksScreen(
                         .padding(horizontal = 16.dp, vertical = 4.dp)
                 )
             }
-            // Segmented Control
+            // Segmented Control (4 filter tabs)
             IosSegmentedControl(
-                items = listOf("Актуальные", "По предметам", "Выполненные"),
+                items = listOf("Актуальные", "По дням", "По предметам", "Готовые"),
                 selectedIndex = uiState.selectedTab,
                 onItemSelected = { viewModel.selectTab(it) },
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
@@ -544,7 +579,66 @@ fun TasksScreen(
                     }
 
                     1 -> {
-                        // Tab 1: "По предметам"
+                        // Tab 1: "По дням"
+                        val today = LocalDate.now()
+                        if (uiState.tasksByDate.isNotEmpty()) {
+                            uiState.tasksByDate.forEach { (date, tasks) ->
+                                val dayKey = date?.toString() ?: "no_date"
+                                val headerTitle = when {
+                                    date == null -> "Без даты"
+                                    date.isEqual(today) -> "Сегодня • ${DateTimeUtils.getDayOfWeekFull(date.dayOfWeek.value)}, ${DateTimeUtils.formatShortDayMonth(date)}"
+                                    date.isEqual(today.plusDays(1)) -> "Завтра • ${DateTimeUtils.getDayOfWeekFull(date.dayOfWeek.value)}, ${DateTimeUtils.formatShortDayMonth(date)}"
+                                    else -> "${DateTimeUtils.getDayOfWeekFull(date.dayOfWeek.value)}, ${DateTimeUtils.formatShortDayMonth(date)}"
+                                }
+                                val headerColor = when {
+                                    date == null -> iosColors.textSecondary
+                                    date.isBefore(today) -> IosRed
+                                    date.isEqual(today) -> IosOrange
+                                    else -> IosBlue
+                                }
+
+                                item(key = "day_hdr_$dayKey") {
+                                    TaskSectionHeader(
+                                        title = headerTitle,
+                                        color = headerColor,
+                                        count = tasks.size,
+                                        onCopyGroupClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            val text = viewModel.buildFormattedTasksByDays(date to tasks)
+                                            copyTextToClipboard(text, "Скопированы задачи на «$headerTitle»!")
+                                        }
+                                    )
+                                }
+                                items(tasks, key = { "day_task_${it.id}" }) { task ->
+                                    TaskItemRow(
+                                        task = task,
+                                        linkedActivity = task.linkedActivityId?.let { activityMap[it] },
+                                        onToggleCompleted = { viewModel.toggleTask(task) },
+                                        onClick = { onViewTask(task) },
+                                        onEditClick = { onEditTask(task) },
+                                        onFocusTimerClick = {
+                                            focusTimerTitle = task.title
+                                            showFocusTimer = true
+                                        },
+                                        onPostponeTomorrowClick = { viewModel.postponeToTomorrow(task) },
+                                        onDeleteClick = { viewModel.deleteTask(task.id) },
+                                        onToggleSubtask = { subId -> viewModel.toggleSubtask(task, subId) }
+                                    )
+                                }
+                            }
+                        } else {
+                            item(key = "tasks_by_day_empty") {
+                                EmptyTasksState(
+                                    title = "Нет задач по дням",
+                                    subtitle = "Все активные задачи сгруппируются здесь по дням недели и датам сдачи.",
+                                    onAddNew = onAddNewTask
+                                )
+                            }
+                        }
+                    }
+
+                    2 -> {
+                        // Tab 2: "По предметам"
                         if (uiState.tasksByActivity.isNotEmpty() || uiState.unassignedTasks.isNotEmpty()) {
                             uiState.tasksByActivity.forEach { (activity, tasks) ->
                                 item(key = "act_hdr_${activity.id}") {
@@ -601,8 +695,8 @@ fun TasksScreen(
                         }
                     }
 
-                    2 -> {
-                        // Tab 2: "Выполненные"
+                    3 -> {
+                        // Tab 3: "Выполненные"
                         if (uiState.completedTasks.isNotEmpty()) {
                             item(key = "clear_completed_header") {
                                 Row(
@@ -685,6 +779,7 @@ fun TaskSectionHeader(
     title: String,
     color: Color,
     count: Int,
+    onCopyGroupClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val iosColors = LocalIosColors.current
@@ -709,6 +804,34 @@ fun TaskSectionHeader(
             color = color,
             modifier = Modifier.weight(1f)
         )
+        if (onCopyGroupClick != null) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(color.copy(alpha = 0.12f))
+                    .clickable { onCopyGroupClick() }
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.ContentCopy,
+                        contentDescription = "Скопировать",
+                        tint = color,
+                        modifier = Modifier.size(11.dp)
+                    )
+                    Text(
+                        text = "Копировать",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = color
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+        }
         Text(
             text = "$count",
             fontSize = 12.sp,

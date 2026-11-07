@@ -133,6 +133,7 @@ fun SettingsScreen(
     var showAddVacationDialog by remember { mutableStateOf(false) }
     var showSemesterDateDialog by remember { mutableStateOf(false) }
     var showEveningTimeDialog by remember { mutableStateOf(false) }
+    var showMorningTaskTimeDialog by remember { mutableStateOf(false) }
     var showPresetSheet by remember { mutableStateOf(false) }
 
     if (showPresetSheet) {
@@ -274,8 +275,8 @@ fun SettingsScreen(
             item(key = "section_personalization") {
                 SettingsSection(title = "ПЕРСОНАЛИЗАЦИЯ И ПРОФИЛЬ") {
                     SettingsRow(
-                        label = "Профиль приложения",
-                        value = uiState.preferences.appProfile.title,
+                        label = "Профиль пресета «${uiState.activePreset.name}»",
+                        value = uiState.activePreset.appProfile.title,
                         onClick = { showProfileDialog = true }
                     )
                     SettingsDivider()
@@ -545,22 +546,18 @@ fun SettingsScreen(
                         SettingsDivider()
                         SettingsSwitchRow(
                             label = "Утренние напоминания о задачах",
-                            sublabel = "Уведомление о дедлайнах на сегодня в 08:00",
+                            sublabel = "Уведомление о задачах на сегодня в ${uiState.preferences.taskRemindersTime}",
                             checked = uiState.preferences.taskRemindersEnabled,
                             onCheckedChange = { viewModel.onToggleTaskReminders(it) }
                         )
-
-                        SettingsDivider()
-                        SettingsButtonRow(
-                            icon = Icons.Rounded.Notifications,
-                            label = "Отправить тестовое уведомление",
-                            sublabel = "Проверить доставку пушей на устройство",
-                            iconTint = IosBlue,
-                            onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                viewModel.sendTestNotification()
-                            }
-                        )
+                        if (uiState.preferences.taskRemindersEnabled) {
+                            SettingsDivider()
+                            SettingsRow(
+                                label = "Время утреннего напоминания",
+                                value = uiState.preferences.taskRemindersTime,
+                                onClick = { showMorningTaskTimeDialog = true }
+                            )
+                        }
                     }
                 }
             }
@@ -662,8 +659,8 @@ fun SettingsScreen(
                     )
                     SettingsDivider()
                     SettingsSwitchRow(
-                        label = "Умный движок ДЗ",
-                        sublabel = "Не ставить ДЗ на праздники и каникулы",
+                        label = "Умный движок задач",
+                        sublabel = "Не ставить задачи на праздники и каникулы",
                         checked = uiState.preferences.skipHolidaysInSmartHomework,
                         onCheckedChange = { viewModel.onToggleSkipHolidaysInHomework(it) }
                     )
@@ -729,6 +726,7 @@ fun SettingsScreen(
 
             // 5. Каталог предметов
             item(key = "section_activities_header") {
+                val activeProfile = uiState.activePreset.appProfile
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -737,7 +735,7 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "КАТАЛОГ ПРЕДМЕТОВ (${uiState.activities.size})",
+                        text = "КАТАЛОГ (${activeProfile.subjectTerm.uppercase()}: ${uiState.activities.size})",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = iosColors.textSecondary
@@ -750,7 +748,7 @@ fun SettingsScreen(
                             .padding(horizontal = 8.dp, vertical = 4.dp)
                     ) {
                         Text(
-                            text = "+ Предмет",
+                            text = "+ ${activeProfile.subjectTerm}",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = IosBlue
@@ -822,11 +820,11 @@ fun SettingsScreen(
     if (showProfileDialog) {
         AlertDialog(
             onDismissRequest = { showProfileDialog = false },
-            title = { Text("Выберите профиль") },
+            title = { Text("Профиль пресета «${uiState.activePreset.name}»") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     AppProfile.entries.forEach { profile ->
-                        val isSelected = uiState.preferences.appProfile == profile
+                        val isSelected = uiState.activePreset.appProfile == profile
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -839,13 +837,19 @@ fun SettingsScreen(
                                 .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = profile.title,
-                                fontSize = 15.sp,
-                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                color = if (isSelected) IosBlue else iosColors.textPrimary,
-                                modifier = Modifier.weight(1f)
-                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = profile.title,
+                                    fontSize = 15.sp,
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (isSelected) IosBlue else iosColors.textPrimary
+                                )
+                                Text(
+                                    text = "${profile.subjectTerm} • ${profile.itemTerm} • ${profile.instructorTerm} • ${profile.locationTerm}",
+                                    fontSize = 11.sp,
+                                    color = iosColors.textSecondary
+                                )
+                            }
                             if (isSelected) {
                                 Icon(Icons.Rounded.Check, contentDescription = null, tint = IosBlue)
                             }
@@ -913,6 +917,19 @@ fun SettingsScreen(
             onConfirm = { newTime ->
                 viewModel.onEveningSummaryTimeChanged(newTime)
                 showEveningTimeDialog = false
+            }
+        )
+    }
+
+    // Modal Morning Task Reminder Time Wheel Dialog
+    if (showMorningTaskTimeDialog) {
+        IosWheelTimePickerDialog(
+            title = "Время напоминания о задачах",
+            initialTime = uiState.preferences.taskRemindersTime,
+            onDismiss = { showMorningTaskTimeDialog = false },
+            onConfirm = { newTime ->
+                viewModel.onTaskRemindersTimeChanged(newTime)
+                showMorningTaskTimeDialog = false
             }
         )
     }

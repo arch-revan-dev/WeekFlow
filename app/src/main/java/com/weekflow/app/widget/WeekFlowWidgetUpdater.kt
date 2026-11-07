@@ -10,18 +10,30 @@ object WeekFlowWidgetUpdater {
     val FORCE_REFRESH_KEY = longPreferencesKey("widget_force_refresh_timestamp")
 
     suspend fun forceUpdateAll(context: Context) {
+        val now = System.currentTimeMillis()
+        val manager = GlanceAppWidgetManager(context)
+
         try {
-            val manager = GlanceAppWidgetManager(context)
-            val glanceIds = manager.getGlanceIds(WeekFlowGlanceWidget::class.java)
-            if (glanceIds.isEmpty()) return
-            val now = System.currentTimeMillis()
-            glanceIds.forEach { glanceId ->
+            val scheduleIds = manager.getGlanceIds(WeekFlowGlanceWidget::class.java)
+            scheduleIds.forEach { glanceId ->
                 updateAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId) { prefs ->
                     prefs.toMutablePreferences().apply {
                         this[FORCE_REFRESH_KEY] = now
                     }
                 }
                 WeekFlowGlanceWidget().update(context, glanceId)
+            }
+        } catch (_: Exception) {}
+
+        try {
+            val taskIds = manager.getGlanceIds(WeekFlowTasksWidget::class.java)
+            taskIds.forEach { glanceId ->
+                updateAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId) { prefs ->
+                    prefs.toMutablePreferences().apply {
+                        this[FORCE_REFRESH_KEY] = now
+                    }
+                }
+                WeekFlowTasksWidget().update(context, glanceId)
             }
         } catch (_: Exception) {}
     }

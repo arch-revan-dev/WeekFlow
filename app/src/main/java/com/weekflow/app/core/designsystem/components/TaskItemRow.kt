@@ -4,9 +4,11 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -65,7 +67,7 @@ import com.weekflow.app.domain.model.Task
 import com.weekflow.app.domain.model.TaskPriority
 import java.time.LocalDate
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun TaskItemRow(
     task: Task,
@@ -84,6 +86,7 @@ fun TaskItemRow(
     val today = LocalDate.now()
 
     var isExpanded by remember(task.id) { mutableStateOf(false) }
+    var isActionsVisible by remember(task.id) { mutableStateOf(false) }
     var isTitleOverflowing by remember(task.id, task.title) { mutableStateOf(false) }
     var isNoteOverflowing by remember(task.id, task.note) { mutableStateOf(false) }
     val hasLongContent = isTitleOverflowing || isNoteOverflowing || task.subtasks.size > 4 || isExpanded
@@ -119,8 +122,26 @@ fun TaskItemRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .background(cardSurface)
-            .border(BorderStroke(0.8.dp, cardBorderColor), RoundedCornerShape(14.dp))
-            .clickable { onClick() }
+            .border(
+                BorderStroke(
+                    width = if (isActionsVisible) 1.2.dp else 0.8.dp,
+                    color = if (isActionsVisible) IosBlue.copy(alpha = 0.7f) else cardBorderColor
+                ),
+                RoundedCornerShape(14.dp)
+            )
+            .combinedClickable(
+                onClick = {
+                    if (isActionsVisible) {
+                        isActionsVisible = false
+                    } else {
+                        onClick()
+                    }
+                },
+                onLongClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    isActionsVisible = !isActionsVisible
+                }
+            )
             .alpha(contentAlpha)
             .padding(horizontal = 14.dp, vertical = 12.dp)
     ) {
@@ -426,8 +447,8 @@ fun TaskItemRow(
                     }
                 }
 
-                // Inline Quick Actions shown ONLY when card is explicitly expanded
-                AnimatedVisibility(visible = isExpanded) {
+                // Inline Quick Actions shown ONLY when card is long-pressed (зажатие)
+                AnimatedVisibility(visible = isActionsVisible) {
                     Column {
                         Spacer(modifier = Modifier.height(10.dp))
                         Row(
@@ -441,6 +462,7 @@ fun TaskItemRow(
                                     tint = IosBlue,
                                     onClick = {
                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        isActionsVisible = false
                                         onEditClick()
                                     },
                                     modifier = Modifier.weight(1f)
@@ -453,6 +475,7 @@ fun TaskItemRow(
                                     tint = IosBlue,
                                     onClick = {
                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        isActionsVisible = false
                                         onFocusTimerClick()
                                     },
                                     modifier = Modifier.weight(1f)
@@ -465,6 +488,7 @@ fun TaskItemRow(
                                     tint = IosOrange,
                                     onClick = {
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        isActionsVisible = false
                                         onPostponeTomorrowClick()
                                     },
                                     modifier = Modifier.weight(1f)
@@ -477,6 +501,7 @@ fun TaskItemRow(
                                     tint = IosRed,
                                     onClick = {
                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        isActionsVisible = false
                                         onDeleteClick()
                                     },
                                     modifier = Modifier.weight(1f)

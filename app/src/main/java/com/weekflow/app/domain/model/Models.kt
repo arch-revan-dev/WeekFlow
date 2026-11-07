@@ -14,7 +14,8 @@ data class SchedulePreset(
     val colorHex: String = "#007AFF",
     val autoStartDateIso: String? = null,
     val autoEndDateIso: String? = null,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val appProfile: AppProfile = AppProfile.STUDY
 ) {
     fun matchesDate(date: LocalDate): Boolean {
         val start = autoStartDateIso?.takeIf { it.isNotBlank() }?.let {
@@ -266,6 +267,7 @@ data class UserPreferences(
     val eveningSummaryEnabled: Boolean = true,
     val eveningSummaryTime: String = "20:00",
     val taskRemindersEnabled: Boolean = true,
+    val taskRemindersTime: String = "08:00",
     val isSaturdayWeekend: Boolean = false,
     val activePresetId: String = SchedulePreset.DEFAULT_ID,
     val showAllPresetsTasks: Boolean = false,

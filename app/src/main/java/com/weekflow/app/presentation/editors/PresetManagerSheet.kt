@@ -68,6 +68,7 @@ import com.weekflow.app.core.designsystem.iosSwitchColors
 import com.weekflow.app.core.util.ColorParser
 import com.weekflow.app.core.util.DateTimeUtils
 import com.weekflow.app.domain.model.Activity
+import com.weekflow.app.domain.model.AppProfile
 import com.weekflow.app.domain.model.SchedulePreset
 import com.weekflow.app.domain.model.Slot
 import com.weekflow.app.domain.model.Task
@@ -79,15 +80,16 @@ import java.util.UUID
 private data class QuickPresetTemplate(
     val name: String,
     val emoji: String,
-    val colorHex: String
+    val colorHex: String,
+    val profile: AppProfile
 )
 
 private val quickTemplates = listOf(
-    QuickPresetTemplate("Сессия", "🔥", "#FF3B30"),
-    QuickPresetTemplate("Работа", "💼", "#5856D6"),
-    QuickPresetTemplate("2 семестр", "📚", "#34C759"),
-    QuickPresetTemplate("Спорт / Режим", "🏋️", "#FF9500"),
-    QuickPresetTemplate("Каникулы", "🏖️", "#00C7BE")
+    QuickPresetTemplate("Школа", "🎒", "#007AFF", AppProfile.STUDY),
+    QuickPresetTemplate("ВУЗ / Сессия", "🎓", "#FF3B30", AppProfile.UNIVERSITY),
+    QuickPresetTemplate("Работа", "💼", "#5856D6", AppProfile.WORK),
+    QuickPresetTemplate("Спорт / Режим", "🏋️", "#FF9500", AppProfile.HEALTH),
+    QuickPresetTemplate("Универсальный", "🌟", "#34C759", AppProfile.UNIVERSAL)
 )
 
 private val presetEmojis = listOf(
@@ -121,6 +123,7 @@ fun PresetManagerSheet(
     var formName by remember { mutableStateOf("") }
     var formEmoji by remember { mutableStateOf("🎓") }
     var formColorHex by remember { mutableStateOf("#007AFF") }
+    var formProfile by remember { mutableStateOf(AppProfile.STUDY) }
     var formUseAutoDates by remember { mutableStateOf(false) }
     var formStartDateIso by remember { mutableStateOf(LocalDate.now().toString()) }
     var formEndDateIso by remember { mutableStateOf(LocalDate.now().plusWeeks(2).toString()) }
@@ -131,6 +134,7 @@ fun PresetManagerSheet(
         formName = template?.name ?: ""
         formEmoji = template?.emoji ?: "🎓"
         formColorHex = template?.colorHex ?: "#007AFF"
+        formProfile = template?.profile ?: AppProfile.STUDY
         formUseAutoDates = false
         formStartDateIso = LocalDate.now().toString()
         formEndDateIso = LocalDate.now().plusWeeks(2).toString()
@@ -142,6 +146,7 @@ fun PresetManagerSheet(
         formName = preset.name
         formEmoji = preset.iconEmoji
         formColorHex = preset.colorHex
+        formProfile = preset.appProfile
         formUseAutoDates = !preset.autoStartDateIso.isNullOrBlank() && !preset.autoEndDateIso.isNullOrBlank()
         formStartDateIso = preset.autoStartDateIso ?: LocalDate.now().toString()
         formEndDateIso = preset.autoEndDateIso ?: LocalDate.now().plusWeeks(2).toString()
@@ -300,8 +305,8 @@ fun PresetManagerSheet(
                                         Spacer(modifier = Modifier.height(2.dp))
 
                                         Text(
-                                            text = "Предметов: $actCount • Занятий в нед: $slotCount • Задач: $taskCount",
-                                            fontSize = 12.sp,
+                                            text = "${preset.appProfile.title} • ${preset.appProfile.subjectTerm}: $actCount • В нед: $slotCount • Задач: $taskCount",
+                                            fontSize = 11.5.sp,
                                             color = iosColors.textSecondary
                                         )
 
@@ -343,7 +348,8 @@ fun PresetManagerSheet(
                                                     id = UUID.randomUUID().toString(),
                                                     name = "${preset.name} (копия)",
                                                     iconEmoji = preset.iconEmoji,
-                                                    colorHex = preset.colorHex
+                                                    colorHex = preset.colorHex,
+                                                    appProfile = preset.appProfile
                                                 )
                                                 onDuplicatePreset(preset.id, copyPreset)
                                             },
@@ -501,10 +507,71 @@ fun PresetManagerSheet(
                     value = formName,
                     onValueChange = { formName = it },
                     label = { Text("Название пресета") },
-                    placeholder = { Text("например, Зимняя сессия / Работа / 2 семестр") },
+                    placeholder = { Text("например, Школа / ВУЗ / Тренировки / Работа") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
+
+                Text(
+                    text = "Профиль пресета (термины, звонки, длительность)",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = iosColors.textSecondary
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    AppProfile.entries.forEach { profileOption ->
+                        val isChosenProfile = profileOption == formProfile
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(
+                                    if (isChosenProfile) IosBlue.copy(alpha = 0.14f)
+                                    else iosColors.cardSecondary
+                                )
+                                .border(
+                                    BorderStroke(
+                                        width = if (isChosenProfile) 1.5.dp else 0.dp,
+                                        color = if (isChosenProfile) IosBlue else Color.Transparent
+                                    ),
+                                    RoundedCornerShape(10.dp)
+                                )
+                                .clickable {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    formProfile = profileOption
+                                }
+                                .padding(horizontal = 12.dp, vertical = 9.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = profileOption.title,
+                                        fontSize = 14.sp,
+                                        fontWeight = if (isChosenProfile) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isChosenProfile) IosBlue else iosColors.textPrimary
+                                    )
+                                    Text(
+                                        text = "${profileOption.subjectTerm} • ${profileOption.itemTerm} • ${profileOption.instructorTerm} • ${profileOption.locationTerm}",
+                                        fontSize = 11.sp,
+                                        color = iosColors.textSecondary
+                                    )
+                                }
+                                if (isChosenProfile) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Check,
+                                        contentDescription = null,
+                                        tint = IosBlue,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
 
                 Text(
                     text = "Иконка пресета",
@@ -654,6 +721,7 @@ fun PresetManagerSheet(
                                 name = formName.trim(),
                                 iconEmoji = formEmoji,
                                 colorHex = formColorHex,
+                                appProfile = formProfile,
                                 autoStartDateIso = if (formUseAutoDates) formStartDateIso.trim().takeIf { it.isNotBlank() } else null,
                                 autoEndDateIso = if (formUseAutoDates) formEndDateIso.trim().takeIf { it.isNotBlank() } else null,
                                 createdAt = editingPreset?.createdAt ?: System.currentTimeMillis()

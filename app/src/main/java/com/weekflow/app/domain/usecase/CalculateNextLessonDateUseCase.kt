@@ -13,9 +13,36 @@ class CalculateNextLessonDateUseCase(
     private val calculateWeekCycleUseCase: CalculateWeekCycleUseCase
 ) {
 
+    fun isOffDay(
+        date: LocalDate,
+        preferences: UserPreferences,
+        vacations: List<Vacation>
+    ): Boolean {
+        if (!preferences.skipHolidaysInSmartHomework) return false
+        if (date.dayOfWeek.value == 7) return true
+        if (preferences.isSaturdayWeekend && date.dayOfWeek.value == 6) return true
+        if (preferences.showRussianHolidays && RussianHolidaysProvider.isHoliday(date)) return true
+        if (vacations.any { it.contains(date) }) return true
+        return false
+    }
+
+    fun findNextValidStudyDay(
+        startDate: LocalDate,
+        preferences: UserPreferences,
+        vacations: List<Vacation>
+    ): LocalDate {
+        for (offset in 0..180) {
+            val candidate = startDate.plusDays(offset.toLong())
+            if (!isOffDay(candidate, preferences, vacations)) {
+                return candidate
+            }
+        }
+        return startDate
+    }
+
     /**
-     * Интеллектуальный поиск ближайшего следующего занятия по предмету (Smart Homework Engine).
-     * Автоматически учитывает двухнедельный цикл (чет/нечет) и опционально пропускает праздники и каникулы.
+     * Интеллектуальный поиск ближайшего следующего занятия по предмету (Умный движок задач).
+     * Автоматически учитывает двухнедельный цикл (чет/нечет) и пропускает выходные, праздники и каникулы.
      */
     operator fun invoke(
         activityId: String,
@@ -28,27 +55,18 @@ class CalculateNextLessonDateUseCase(
         val subjectSlots = allSlots.filter { it.activityTypeId == activityId }
         if (subjectSlots.isEmpty()) {
             return NextLessonMatch(
-                dueDate = referenceDate.plusDays(1),
+                dueDate = findNextValidStudyDay(referenceDate.plusDays(1), preferences, vacations),
                 linkedSlotId = null,
                 slot = null
             )
         }
 
-        // Сканируем 4 недели вперед (28 дней)
-        for (offset in 0..28) {
+        // Сканируем до 120 дней вперед (чтобы гарантированно перешагнуть любые каникулы/отпуска)
+        for (offset in 0..120) {
             val candidateDate = referenceDate.plusDays(offset.toLong())
 
-            // Пропуск праздников и каникул, если включена опция
-            if (preferences.skipHolidaysInSmartHomework) {
-                if (preferences.isSaturdayWeekend && candidateDate.dayOfWeek.value == 6) {
-                    continue
-                }
-                if (preferences.showRussianHolidays && RussianHolidaysProvider.isHoliday(candidateDate)) {
-                    continue
-                }
-                if (vacations.any { it.contains(candidateDate) }) {
-                    continue
-                }
+            if (isOffDay(candidateDate, preferences, vacations)) {
+                continue
             }
 
             val activeCycle = calculateWeekCycleUseCase(candidateDate, preferences)
@@ -63,7 +81,6 @@ class CalculateNextLessonDateUseCase(
                 .sortedBy { it.parseStartTime() }
 
             if (offset == 0) {
-                // Если сегодняшний день, берем только те занятия, которые начнутся ПОСЛЕ текущего времени
                 val futureSlots = if (referenceTime != null) {
                     matchingSlots.filter { it.parseStartTime().isAfter(referenceTime) }
                 } else {
@@ -90,7 +107,7 @@ class CalculateNextLessonDateUseCase(
         }
 
         return NextLessonMatch(
-            dueDate = referenceDate.plusDays(1),
+            dueDate = findNextValidStudyDay(referenceDate.plusDays(1), preferences, vacations),
             linkedSlotId = null,
             slot = null
         )

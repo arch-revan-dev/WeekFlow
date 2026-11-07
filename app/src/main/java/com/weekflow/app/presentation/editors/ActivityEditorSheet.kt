@@ -68,11 +68,17 @@ fun ActivityEditorSheet(
 
     var name by remember(initialActivity?.id) { mutableStateOf(initialActivity?.name ?: "") }
     var shortName by remember(initialActivity?.id) { mutableStateOf(initialActivity?.shortName ?: "") }
-    var selectedCategory by remember(initialActivity?.id) { mutableStateOf(initialActivity?.category ?: ActivityCategory.STUDY) }
-    var selectedColorHex by remember(initialActivity?.id) { mutableStateOf(initialActivity?.colorHex ?: selectedCategory.defaultColorHex) }
+    var selectedCategory by remember(initialActivity?.id, appProfile) {
+        mutableStateOf(initialActivity?.category ?: appProfile.defaultCategory)
+    }
+    var selectedColorHex by remember(initialActivity?.id, appProfile) {
+        mutableStateOf(initialActivity?.colorHex ?: selectedCategory.defaultColorHex)
+    }
     var defaultLocation by remember(initialActivity?.id) { mutableStateOf(initialActivity?.defaultLocation ?: "") }
     var defaultInstructor by remember(initialActivity?.id) { mutableStateOf(initialActivity?.defaultInstructor ?: "") }
-    var defaultType by remember(initialActivity?.id) { mutableStateOf(initialActivity?.defaultType ?: "") }
+    var defaultType by remember(initialActivity?.id) {
+        mutableStateOf(initialActivity?.defaultType ?: appProfile.defaultLessonTypes.firstOrNull().orEmpty())
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -95,7 +101,7 @@ fun ActivityEditorSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = if (initialActivity == null) "Новый предмет" else "Редактировать предмет",
+                    text = if (initialActivity == null) "Новый: ${appProfile.subjectTerm.lowercase()}" else "Редактировать: ${appProfile.subjectTerm.lowercase()}",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                     color = iosColors.textPrimary
@@ -109,8 +115,8 @@ fun ActivityEditorSheet(
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("Название предмета") },
-                placeholder = { Text("например, Высшая математика") },
+                label = { Text("Название (${appProfile.subjectTerm.lowercase()})") },
+                placeholder = { Text("например, ${appProfile.subjectPlaceholder}") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
@@ -119,8 +125,8 @@ fun ActivityEditorSheet(
             OutlinedTextField(
                 value = shortName,
                 onValueChange = { shortName = it },
-                label = { Text("Сокращение для бейджей") },
-                placeholder = { Text("например, Матан") },
+                label = { Text("Сокращение для бейджей и сетки") },
+                placeholder = { Text("например, ${appProfile.shortSubjectPlaceholder}") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
@@ -174,7 +180,7 @@ fun ActivityEditorSheet(
                 value = defaultLocation,
                 onValueChange = { defaultLocation = it },
                 label = { Text(appProfile.locationTerm) },
-                placeholder = { Text("например, Ауд. 402") },
+                placeholder = { Text("например, ${appProfile.locationPlaceholder}") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
@@ -184,20 +190,43 @@ fun ActivityEditorSheet(
                 value = defaultInstructor,
                 onValueChange = { defaultInstructor = it },
                 label = { Text(appProfile.instructorTerm) },
-                placeholder = { Text("например, Иванов И.И.") },
+                placeholder = { Text("например, ${appProfile.instructorPlaceholder}") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
 
-            // Default Lesson Type
-            OutlinedTextField(
-                value = defaultType,
-                onValueChange = { defaultType = it },
-                label = { Text("Тип занятия по умолчанию") },
-                placeholder = { Text("например, Лекция / Семинар") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
+            // Default Lesson Type + Quick Profile Chips
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedTextField(
+                    value = defaultType,
+                    onValueChange = { defaultType = it },
+                    label = { Text("Тип / Формат по умолчанию") },
+                    placeholder = { Text("например, ${appProfile.defaultLessonTypes.take(2).joinToString(" / ")}") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(appProfile.defaultLessonTypes) { typeOption ->
+                        val isChosen = defaultType.equals(typeOption, ignoreCase = true)
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (isChosen) IosBlue else iosColors.cardSecondary)
+                                .clickable {
+                                    defaultType = if (isChosen) "" else typeOption
+                                }
+                                .padding(horizontal = 10.dp, vertical = 5.dp)
+                        ) {
+                            Text(
+                                text = typeOption,
+                                fontSize = 11.5.sp,
+                                fontWeight = if (isChosen) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isChosen) Color.White else iosColors.textPrimary
+                            )
+                        }
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.height(6.dp))
 

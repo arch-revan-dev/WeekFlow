@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
+import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.temporal.TemporalAdjusters
@@ -318,6 +319,63 @@ class ScheduleViewModel(
     fun deleteEvent(eventId: String) {
         viewModelScope.launch {
             scheduleRepository.deleteEvent(eventId)
+        }
+    }
+
+    fun moveSlotToCell(slot: Slot, targetDayOfWeek: Int, targetPeriodOrder: Int) {
+        if (slot.dayOfWeek == targetDayOfWeek && slot.periodOrder == targetPeriodOrder) return
+        val existingSlots = uiState.value.allSlots
+        val profile = uiState.value.activePreset.appProfile
+
+        val (newStart, newEnd) = if (targetPeriodOrder > 0) {
+            val sameDayPeriod = existingSlots.firstOrNull {
+                it.dayOfWeek == targetDayOfWeek && it.periodOrder == targetPeriodOrder && it.id != slot.id
+            }
+            val anyDayPeriod = existingSlots
+                .filter { it.periodOrder == targetPeriodOrder && it.id != slot.id }
+                .groupingBy { it.startTime to it.endTime }
+                .eachCount()
+                .maxByOrNull { it.value }
+                ?.key
+            when {
+                sameDayPeriod != null -> sameDayPeriod.startTime to sameDayPeriod.endTime
+                anyDayPeriod != null -> anyDayPeriod
+                targetPeriodOrder == slot.periodOrder -> slot.startTime to slot.endTime
+                else -> {
+                    profile.defaultBellTimes.getOrElse(targetPeriodOrder - 1) {
+                        val durationMin = Duration.between(slot.parseStartTime(), slot.parseEndTime()).toMinutes().coerceAtLeast(30)
+                        val startMin = 8 * 60 + 30 + (targetPeriodOrder - 1) * (profile.defaultDurationMinutes + profile.defaultBreakMinutes)
+                        val start = LocalTime.of((startMin / 60) % 24, startMin % 60)
+                        val end = start.plusMinutes(durationMin)
+                        String.format("%02d:%02d", start.hour, start.minute) to String.format("%02d:%02d", end.hour, end.minute)
+                    }
+                }
+            }
+        } else {
+            slot.startTime to slot.endTime
+        }
+
+        viewModelScope.launch {
+            scheduleRepository.upsertSlot(
+                slot.copy(
+                    dayOfWeek = targetDayOfWeek,
+                    periodOrder = targetPeriodOrder,
+                    startTime = newStart,
+                    endTime = newEnd
+                )
+            )
+        }
+    }
+
+    fun updateSlotTime(slot: Slot, newStartTime: String, newEndTime: String) {
+        if (slot.startTime == newStartTime && slot.endTime == newEndTime) return
+        viewModelScope.launch {
+            scheduleRepository.upsertSlot(
+                slot.copy(
+                    startTime = newStartTime,
+                    endTime = newEndTime
+                )
+            )
         }
     }
 }

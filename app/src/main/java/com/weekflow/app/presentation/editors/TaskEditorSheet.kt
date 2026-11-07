@@ -156,11 +156,15 @@ fun TaskEditorSheet(
                 ?: initialDetected?.nextLessonMatch?.linkedSlotId
         )
     }
+    val defaultSmartReferenceDate = remember(referenceDate, vacations.size, preferences.skipHolidaysInSmartHomework) {
+        calculateNextLessonDateUseCase.findNextValidStudyDay(referenceDate, preferences, vacations)
+    }
+
     var dueDateIso by remember(initialTask?.id) {
         mutableStateOf(
             initialTask?.dueDateIso
                 ?: initialDetected?.nextLessonMatch?.dueDate?.toString()
-                ?: referenceDate.toString()
+                ?: defaultSmartReferenceDate.toString()
         )
     }
     var isManualDateOverride by remember(initialTask?.id) { mutableStateOf(false) }
@@ -191,30 +195,37 @@ fun TaskEditorSheet(
         }
     }
 
-    LaunchedEffect(allSlots.size) {
-        if (!isInitialized && initialTask == null && initialActivityId == null && detectActiveOrRecentActivityUseCase != null && allSlots.isNotEmpty()) {
-            val detected = detectActiveOrRecentActivityUseCase(
-                allSlots = allSlots,
-                preferences = preferences,
-                vacations = vacations
-            )
-            if (detected != null) {
-                detectedActivity = detected
-                showAutoDetectedBanner = true
-                selectedActivityId = detected.slot.activityTypeId
-                linkedSlotId = detected.nextLessonMatch.linkedSlotId
-                if (!isManualDateOverride) {
+    LaunchedEffect(allSlots.size, vacations.size) {
+        if (initialTask == null && !isManualDateOverride) {
+            val actId = selectedActivityId
+            if (actId != null) {
+                recalculateSmartLesson(actId)
+            } else if (!isInitialized && initialActivityId == null && detectActiveOrRecentActivityUseCase != null && allSlots.isNotEmpty()) {
+                val detected = detectActiveOrRecentActivityUseCase(
+                    allSlots = allSlots,
+                    preferences = preferences,
+                    vacations = vacations
+                )
+                if (detected != null) {
+                    detectedActivity = detected
+                    showAutoDetectedBanner = true
+                    selectedActivityId = detected.slot.activityTypeId
+                    linkedSlotId = detected.nextLessonMatch.linkedSlotId
                     dueDateIso = detected.nextLessonMatch.dueDate.toString()
+                    smartLessonMatch = detected.nextLessonMatch
+                } else {
+                    dueDateIso = defaultSmartReferenceDate.toString()
                 }
-                smartLessonMatch = detected.nextLessonMatch
+                isInitialized = true
+            } else {
+                dueDateIso = defaultSmartReferenceDate.toString()
             }
-            isInitialized = true
         }
     }
 
     LaunchedEffect(selectedActivityId) {
         val actId = selectedActivityId
-        if (actId != null && initialTask == null && detectedActivity?.slot?.activityTypeId != actId) {
+        if (actId != null && initialTask == null) {
             recalculateSmartLesson(actId)
         }
     }
@@ -291,7 +302,7 @@ fun TaskEditorSheet(
                                 showAutoDetectedBanner = false
                                 selectedActivityId = null
                                 linkedSlotId = null
-                                dueDateIso = referenceDate.toString()
+                                dueDateIso = defaultSmartReferenceDate.toString()
                                 smartLessonMatch = null
                             },
                             modifier = Modifier.size(28.dp)
@@ -609,7 +620,7 @@ fun TaskEditorSheet(
                                 dueDateIso = match.dueDate.toString()
                                 linkedSlotId = match.linkedSlotId
                             } else if (initialTask == null) {
-                                dueDateIso = referenceDate.toString()
+                                dueDateIso = defaultSmartReferenceDate.toString()
                             }
                         }
                     },

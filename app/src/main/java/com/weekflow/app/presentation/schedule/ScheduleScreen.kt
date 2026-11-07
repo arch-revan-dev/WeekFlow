@@ -439,6 +439,9 @@ fun ScheduleScreen(
                         isTwoWeekCycleEnabled = uiState.preferences.isTwoWeekCycleEnabled,
                         onEditSlot = onEditSlot,
                         onAddSlot = { day, periodOrder -> onAddNewSlotWithPeriod(day, periodOrder) },
+                        onMoveSlot = { slot, targetDay, targetPeriod ->
+                            viewModel.moveSlotToCell(slot, targetDay, targetPeriod)
+                        },
                         isSaturdayWeekend = uiState.preferences.isSaturdayWeekend,
                         tasks = uiState.allTasks,
                         onDateClick = { date ->
@@ -474,6 +477,9 @@ fun ScheduleScreen(
                         onEditEvent = onEditEvent,
                         onAddSlotWithTime = { startTime, endTime ->
                             onAddNewSlotWithTime(uiState.selectedDate.dayOfWeek.value, startTime, endTime)
+                        },
+                        onMoveSlotTime = { slot, newStart, newEnd ->
+                            viewModel.updateSlotTime(slot, newStart, newEnd)
                         }
                     )
                 }

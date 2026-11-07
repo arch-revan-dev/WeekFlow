@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,16 +34,20 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -99,6 +104,7 @@ fun WeekTableGridView(
     isTwoWeekCycleEnabled: Boolean,
     onEditSlot: (slotId: String) -> Unit,
     onAddSlot: (dayOfWeek: Int, periodOrder: Int) -> Unit,
+    onMoveSlot: ((slot: Slot, targetDayOfWeek: Int, targetPeriodOrder: Int) -> Unit)? = null,
     modifier: Modifier = Modifier,
     isSaturdayWeekend: Boolean = false,
     tasks: List<Task> = emptyList(),
@@ -106,9 +112,15 @@ fun WeekTableGridView(
 ) {
     val iosColors = LocalIosColors.current
     val haptic = LocalHapticFeedback.current
+    val density = LocalDensity.current
     val activityMap = remember(activities) { activities.associateBy { it.id } }
 
     var scaleFactor by remember { mutableFloatStateOf(0.95f) }
+    var draggingSlot by remember { mutableStateOf<Slot?>(null) }
+    var dragOriginDayIdx by remember { mutableStateOf(0) }
+    var dragOriginPeriodIdx by remember { mutableStateOf(0) }
+    var dragOffsetPx by remember { mutableStateOf(Offset.Zero) }
+    var hoveredTargetCell by remember { mutableStateOf<Pair<Int, Int>?>(null) } // (dayOfWeek, periodOrder)
 
     val activeSlots = remember(slots, isTwoWeekCycleEnabled, activeWeekCycle) {
         slots.filter { slot ->
@@ -128,10 +140,13 @@ fun WeekTableGridView(
     val horizontalScroll = rememberScrollState()
     val verticalScroll = rememberScrollState()
 
-    val cellWidth = (102f * scaleFactor).dp
-    val timeColWidth = (46f * scaleFactor).coerceAtLeast(34f).dp
-    val cellHeight = (86f * scaleFactor).dp
+    val cellWidth = (106f * scaleFactor).dp
+    val timeColWidth = (48f * scaleFactor).coerceAtLeast(36f).dp
+    val cellHeight = (88f * scaleFactor).dp
     val headerHeight = (44f * scaleFactor).coerceAtLeast(34f).dp
+    val cellPaddingDp = (6f * scaleFactor).coerceIn(3f, 8f).dp
+    val cellWidthPx = with(density) { cellWidth.toPx() }
+    val cellHeightPx = with(density) { cellHeight.toPx() }
 
     Box(
         modifier = modifier
@@ -276,9 +291,11 @@ fun WeekTableGridView(
                                 if (sampleSlot != null) {
                                     Text(
                                         text = sampleSlot.startTime,
-                                        fontSize = (9.5f * scaleFactor).coerceAtLeast(7.5f).sp,
+                                        fontSize = (9.5f * scaleFactor).coerceAtLeast(7f).sp,
+                                        lineHeight = (10.5f * scaleFactor).coerceAtLeast(8f).sp,
                                         color = iosColors.textSecondary,
-                                        maxLines = 1
+                                        maxLines = 1,
+                                        softWrap = false
                                     )
                                 }
                             }
@@ -293,7 +310,7 @@ fun WeekTableGridView(
                         .weight(1f)
                         .horizontalScroll(horizontalScroll)
                 ) {
-                    weekDays.forEach { date ->
+                    weekDays.forEachIndexed { dayIndex, date ->
                         val dayOfWeek = date.dayOfWeek.value
                         val dateIso = date.toString()
                         val dayPendingTasks = tasks.filter { it.dueDateIso == dateIso && !it.isCompleted }
@@ -308,16 +325,18 @@ fun WeekTableGridView(
                                 .width(cellWidth)
                                 .padding(horizontal = 2.dp)
                         ) {
-                            periods.forEach { period ->
+                            periods.forEachIndexed { periodIndex, period ->
                                 val matchingSlots = activeSlots.filter {
                                     it.dayOfWeek == dayOfWeek &&
                                         (if (period <= 0) it.periodOrder <= 0 else it.periodOrder == period)
                                 }.sortedBy { it.parseStartTime() }
                                 val slot = matchingSlots.firstOrNull()
+                                val isDropTarget = hoveredTargetCell?.first == dayOfWeek && hoveredTargetCell?.second == period
 
                                 if (slot != null) {
                                     val act = activityMap[slot.activityTypeId]
                                     val actColor = ColorParser.parseHexColor(act?.colorHex ?: "#007AFF")
+                                    val isBeingDragged = draggingSlot?.id == slot.id
                                     val slotTasksOnDate = dayPendingTasks.filter { task ->
                                         when {
                                             task.linkedSlotId == slot.id -> true
@@ -336,21 +355,71 @@ fun WeekTableGridView(
                                         modifier = Modifier
                                             .height(cellHeight)
                                             .fillMaxWidth()
-                                            .padding(vertical = 3.dp)
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(cellSurface)
+                                            .padding(vertical = (2.5f * scaleFactor).coerceIn(1.5f, 3.5f).dp)
+                                            .clip(RoundedCornerShape((10f * scaleFactor).coerceIn(6f, 12f).dp))
+                                            .background(
+                                                if (isDropTarget) IosBlue.copy(alpha = 0.25f) else cellSurface
+                                            )
                                             .border(
                                                 BorderStroke(
-                                                    width = 1.4.dp,
-                                                    color = actColor.copy(alpha = if (iosColors.isDark) 0.8f else 0.72f)
+                                                    width = if (isDropTarget || isBeingDragged) 2.2.dp else 1.4.dp,
+                                                    color = if (isDropTarget) IosBlue else actColor.copy(alpha = if (iosColors.isDark) 0.8f else 0.72f)
                                                 ),
-                                                RoundedCornerShape(10.dp)
+                                                RoundedCornerShape((10f * scaleFactor).coerceIn(6f, 12f).dp)
                                             )
+                                            .alpha(if (isBeingDragged) 0.45f else 1f)
+                                            .pointerInput(slot.id, scaleFactor, periods.size) {
+                                                detectDragGesturesAfterLongPress(
+                                                    onDragStart = {
+                                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                        draggingSlot = slot
+                                                        dragOriginDayIdx = dayIndex
+                                                        dragOriginPeriodIdx = periodIndex
+                                                        dragOffsetPx = Offset.Zero
+                                                        hoveredTargetCell = dayOfWeek to period
+                                                    },
+                                                    onDragEnd = {
+                                                        val target = hoveredTargetCell
+                                                        val dragged = draggingSlot
+                                                        val movedDistance = dragOffsetPx.getDistance()
+                                                        draggingSlot = null
+                                                        hoveredTargetCell = null
+                                                        dragOffsetPx = Offset.Zero
+                                                        // Require at least 18px movement to avoid false triggers on long-press release
+                                                        if (dragged != null && target != null && movedDistance > 18f && onMoveSlot != null) {
+                                                            if (target.first != dragged.dayOfWeek || target.second != dragged.periodOrder) {
+                                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                                onMoveSlot(dragged, target.first, target.second)
+                                                            }
+                                                        }
+                                                    },
+                                                    onDragCancel = {
+                                                        draggingSlot = null
+                                                        hoveredTargetCell = null
+                                                        dragOffsetPx = Offset.Zero
+                                                    },
+                                                    onDrag = { change, dragAmount ->
+                                                        change.consume()
+                                                        dragOffsetPx += dragAmount
+                                                        if (cellWidthPx > 0f && cellHeightPx > 0f) {
+                                                            val deltaCol = (dragOffsetPx.x / cellWidthPx).roundToInt()
+                                                            val deltaRow = (dragOffsetPx.y / cellHeightPx).roundToInt()
+                                                            val newDayIdx = (dragOriginDayIdx + deltaCol).coerceIn(0, weekDays.lastIndex)
+                                                            val newPeriodIdx = (dragOriginPeriodIdx + deltaRow).coerceIn(0, periods.lastIndex)
+                                                            val newTarget = weekDays[newDayIdx].dayOfWeek.value to periods[newPeriodIdx]
+                                                            if (newTarget != hoveredTargetCell) {
+                                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                                hoveredTargetCell = newTarget
+                                                            }
+                                                        }
+                                                    }
+                                                )
+                                            }
                                             .clickable {
                                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                                 onEditSlot(slot.id)
                                             }
-                                            .padding(6.dp)
+                                            .padding(cellPaddingDp)
                                     ) {
                                         Column(
                                             modifier = Modifier.fillMaxSize(),
@@ -361,13 +430,14 @@ fun WeekTableGridView(
                                                 horizontalArrangement = Arrangement.SpaceBetween,
                                                 verticalAlignment = Alignment.Top
                                             ) {
+                                                val titleFontSp = (11f * scaleFactor).coerceIn(7.5f, 15f)
                                                 Text(
                                                     text = act?.shortName?.ifBlank { act.name } ?: "Урок",
-                                                    fontSize = (11f * scaleFactor).coerceAtLeast(8.5f).sp,
-                                                    lineHeight = (12.5f * scaleFactor).coerceAtLeast(10f).sp,
+                                                    fontSize = titleFontSp.sp,
+                                                    lineHeight = (titleFontSp * 1.12f).sp,
                                                     fontWeight = FontWeight.Bold,
                                                     color = iosColors.textPrimary,
-                                                    maxLines = 2,
+                                                    maxLines = if (scaleFactor < 0.78f) 1 else 2,
                                                     overflow = TextOverflow.Ellipsis,
                                                     modifier = Modifier.weight(1f)
                                                 )
@@ -375,18 +445,22 @@ fun WeekTableGridView(
                                                     Box(
                                                         modifier = Modifier
                                                             .padding(start = 2.dp)
-                                                            .clip(RoundedCornerShape(5.dp))
+                                                            .clip(RoundedCornerShape(4.dp))
                                                             .background(IosOrange)
-                                                            .padding(horizontal = 4.dp, vertical = 1.dp),
+                                                            .padding(
+                                                                horizontal = (3.5f * scaleFactor).coerceAtLeast(2.5f).dp,
+                                                                vertical = 0.5.dp
+                                                            ),
                                                         contentAlignment = Alignment.Center
                                                     ) {
                                                         Text(
                                                             text = "${slotTasksOnDate.size}",
-                                                            fontSize = (8.5f * scaleFactor).coerceAtLeast(7.5f).sp,
-                                                            lineHeight = (9.5f * scaleFactor).coerceAtLeast(8.5f).sp,
+                                                            fontSize = (8.5f * scaleFactor).coerceIn(6.5f, 11f).sp,
+                                                            lineHeight = (9.5f * scaleFactor).coerceIn(7.5f, 12f).sp,
                                                             fontWeight = FontWeight.Bold,
                                                             color = Color.White,
-                                                            maxLines = 1
+                                                            maxLines = 1,
+                                                            softWrap = false
                                                         )
                                                     }
                                                 }
@@ -394,12 +468,15 @@ fun WeekTableGridView(
 
                                             Column {
                                                 val loc = slot.customLocation?.takeIf { it.isNotBlank() } ?: act?.defaultLocation
-                                                if (!loc.isNullOrBlank()) {
+                                                if (!loc.isNullOrBlank() && scaleFactor >= 0.70f) {
+                                                    val locFontSp = (9.5f * scaleFactor).coerceIn(7f, 13f)
                                                     Text(
                                                         text = loc,
-                                                        fontSize = (10f * scaleFactor).coerceAtLeast(8f).sp,
+                                                        fontSize = locFontSp.sp,
+                                                        lineHeight = (locFontSp * 1.1f).sp,
                                                         color = iosColors.textSecondary,
                                                         maxLines = 1,
+                                                        softWrap = false,
                                                         overflow = TextOverflow.Ellipsis
                                                     )
                                                 }
@@ -408,19 +485,25 @@ fun WeekTableGridView(
                                                     horizontalArrangement = Arrangement.SpaceBetween,
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
+                                                    val timeFontSp = (8.8f * scaleFactor).coerceIn(6.5f, 12.5f)
                                                     Text(
                                                         text = "${slot.startTime}–${slot.endTime}",
-                                                        fontSize = (9f * scaleFactor).coerceAtLeast(7f).sp,
+                                                        fontSize = timeFontSp.sp,
+                                                        lineHeight = (timeFontSp * 1.05f).sp,
                                                         fontWeight = FontWeight.SemiBold,
                                                         color = actColor,
-                                                        maxLines = 1
+                                                        maxLines = 1,
+                                                        softWrap = false,
+                                                        overflow = TextOverflow.Clip
                                                     )
                                                     if (matchingSlots.size > 1) {
                                                         Text(
                                                             text = "+${matchingSlots.size - 1}",
-                                                            fontSize = (8.5f * scaleFactor).coerceAtLeast(7f).sp,
+                                                            fontSize = (8f * scaleFactor).coerceIn(6.5f, 11f).sp,
                                                             fontWeight = FontWeight.Bold,
-                                                            color = actColor
+                                                            color = actColor,
+                                                            maxLines = 1,
+                                                            softWrap = false
                                                         )
                                                     }
                                                 }
@@ -428,14 +511,27 @@ fun WeekTableGridView(
                                         }
                                     }
                                 } else {
-                                    // Empty cell -> tap to add slot prefilled with day & period
+                                    // Empty cell -> tap to add slot prefilled with day & period (or drop target)
                                     Box(
                                         modifier = Modifier
                                             .height(cellHeight)
                                             .fillMaxWidth()
-                                            .padding(vertical = 3.dp)
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(iosColors.cardSecondary.copy(alpha = 0.5f))
+                                            .padding(vertical = (2.5f * scaleFactor).coerceIn(1.5f, 3.5f).dp)
+                                            .clip(RoundedCornerShape((10f * scaleFactor).coerceIn(6f, 12f).dp))
+                                            .background(
+                                                if (isDropTarget) IosBlue.copy(alpha = 0.22f)
+                                                else iosColors.cardSecondary.copy(alpha = 0.5f)
+                                            )
+                                            .then(
+                                                if (isDropTarget) {
+                                                    Modifier.border(
+                                                        BorderStroke(2.dp, IosBlue),
+                                                        RoundedCornerShape((10f * scaleFactor).coerceIn(6f, 12f).dp)
+                                                    )
+                                                } else {
+                                                    Modifier
+                                                }
+                                            )
                                             .clickable {
                                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                                 onAddSlot(dayOfWeek, period)
@@ -445,8 +541,8 @@ fun WeekTableGridView(
                                         Icon(
                                             imageVector = Icons.Rounded.Add,
                                             contentDescription = "Добавить в слот",
-                                            tint = iosColors.separator,
-                                            modifier = Modifier.size(16.dp)
+                                            tint = if (isDropTarget) IosBlue else iosColors.separator,
+                                            modifier = Modifier.size((16f * scaleFactor).coerceIn(11f, 20f).dp)
                                         )
                                     }
                                 }

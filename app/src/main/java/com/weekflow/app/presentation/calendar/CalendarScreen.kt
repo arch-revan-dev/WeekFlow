@@ -1,6 +1,10 @@
 package com.weekflow.app.presentation.calendar
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -35,6 +39,7 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Celebration
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -52,6 +57,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -61,6 +67,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.weekflow.app.core.designsystem.IosBlue
+import com.weekflow.app.core.designsystem.IosOrange
 import com.weekflow.app.core.designsystem.IosRed
 import com.weekflow.app.core.designsystem.LocalIosColors
 import com.weekflow.app.core.designsystem.components.FocusTimerDialog
@@ -308,7 +315,7 @@ fun CalendarScreen(
                 }
             }
 
-            // Month Grid (Full Month or Selected Week Row)
+            // Month Grid (Full Month or Selected Week Row) with smooth spring animation & vertical swipe
             val daysToShow = remember(isMonthExpanded, uiState.monthDays, uiState.selectedDate) {
                 if (isMonthExpanded) {
                     uiState.monthDays
@@ -320,46 +327,122 @@ fun CalendarScreen(
                 }
             }
 
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(7),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp)
-            ) {
-                items(daysToShow, key = { it.date.toString() }) { dayModel ->
-                    CalendarDayCell(
-                        day = dayModel,
-                        isSelected = dayModel.date == uiState.selectedDate,
-                        isSaturdayWeekend = uiState.preferences.isSaturdayWeekend,
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            viewModel.onDateSelected(dayModel.date)
-                        }
-                    )
-                }
-            }
+            var accumulatedVerticalDrag by remember { mutableStateOf(0f) }
 
-            // Drag handle pill (40.dp x 4.dp) with swipe gesture to collapse/expand
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .pointerInput(Unit) {
-                        detectVerticalDragGestures { _, dragAmount ->
-                            if (dragAmount < -12f) isMonthExpanded = false
-                            else if (dragAmount > 12f) isMonthExpanded = true
-                        }
+                    .animateContentSize(
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioLowBouncy,
+                            stiffness = Spring.StiffnessMediumLow
+                        )
+                    )
+                    .pointerInput(isMonthExpanded) {
+                        detectVerticalDragGestures(
+                            onDragStart = { accumulatedVerticalDrag = 0f },
+                            onVerticalDrag = { _, dragAmount ->
+                                accumulatedVerticalDrag += dragAmount
+                                if (accumulatedVerticalDrag < -32f && isMonthExpanded) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    isMonthExpanded = false
+                                    accumulatedVerticalDrag = 0f
+                                } else if (accumulatedVerticalDrag > 32f && !isMonthExpanded) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    isMonthExpanded = true
+                                    accumulatedVerticalDrag = 0f
+                                }
+                            }
+                        )
                     }
-                    .clickable { isMonthExpanded = !isMonthExpanded }
-                    .padding(vertical = 6.dp),
-                contentAlignment = Alignment.Center
             ) {
-                Box(
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(7),
+                    userScrollEnabled = false,
                     modifier = Modifier
-                        .width(40.dp)
-                        .height(4.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(iosColors.separator)
-                )
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp)
+                ) {
+                    items(daysToShow, key = { it.date.toString() }) { dayModel ->
+                        CalendarDayCell(
+                            day = dayModel,
+                            isSelected = dayModel.date == uiState.selectedDate,
+                            isSaturdayWeekend = uiState.preferences.isSaturdayWeekend,
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                viewModel.onDateSelected(dayModel.date)
+                            }
+                        )
+                    }
+                }
+            }
+
+            val chevronRotation by animateFloatAsState(
+                targetValue = if (isMonthExpanded) 180f else 0f,
+                animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                label = "CalendarHandleChevron"
+            )
+
+            // Interactive swipe & tap handle bar between month grid and day sheet
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .pointerInput(isMonthExpanded) {
+                        var dragSum = 0f
+                        detectVerticalDragGestures(
+                            onDragStart = { dragSum = 0f },
+                            onVerticalDrag = { change, dragAmount ->
+                                change.consume()
+                                dragSum += dragAmount
+                                if (dragSum < -20f && isMonthExpanded) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    isMonthExpanded = false
+                                    dragSum = 0f
+                                } else if (dragSum > 20f && !isMonthExpanded) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    isMonthExpanded = true
+                                    dragSum = 0f
+                                }
+                            }
+                        )
+                    }
+                    .clickable {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        isMonthExpanded = !isMonthExpanded
+                    }
+                    .padding(vertical = 4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(iosColors.card.copy(alpha = 0.7f))
+                        .padding(horizontal = 12.dp, vertical = 3.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .width(28.dp)
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(iosColors.textSecondary.copy(alpha = 0.45f))
+                    )
+                    Text(
+                        text = if (isMonthExpanded) "Неделя" else "Весь месяц",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = iosColors.textSecondary
+                    )
+                    Icon(
+                        imageVector = Icons.Rounded.KeyboardArrowDown,
+                        contentDescription = null,
+                        tint = iosColors.textSecondary,
+                        modifier = Modifier
+                            .size(14.dp)
+                            .rotate(chevronRotation)
+                    )
+                }
             }
 
             // Lower half: Selected Day Summary
@@ -381,10 +464,29 @@ fun CalendarScreen(
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Day Title header
+                // Day Title header with swipe gesture to expand/collapse calendar
                 item(key = "day_header") {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .pointerInput(isMonthExpanded) {
+                                var dragDelta = 0f
+                                detectVerticalDragGestures(
+                                    onDragStart = { dragDelta = 0f },
+                                    onVerticalDrag = { _, dragAmount ->
+                                        dragDelta += dragAmount
+                                        if (dragDelta < -24f && isMonthExpanded) {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            isMonthExpanded = false
+                                            dragDelta = 0f
+                                        } else if (dragDelta > 24f && !isMonthExpanded) {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            isMonthExpanded = true
+                                            dragDelta = 0f
+                                        }
+                                    }
+                                )
+                            },
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -586,18 +688,52 @@ fun CalendarDayCell(
         verticalArrangement = Arrangement.Center
     ) {
         Box(
-            modifier = Modifier
-                .size(30.dp)
-                .clip(CircleShape)
-                .background(if (isSelected) IosBlue else Color.Transparent),
+            modifier = Modifier.size(34.dp),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = "${day.date.dayOfMonth}",
-                fontSize = 14.sp,
-                fontWeight = if (isSelected || day.isToday) FontWeight.Bold else FontWeight.Normal,
-                color = textColor
-            )
+            Box(
+                modifier = Modifier
+                    .size(30.dp)
+                    .clip(CircleShape)
+                    .background(if (isSelected) IosBlue else Color.Transparent),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "${day.date.dayOfMonth}",
+                    fontSize = 14.sp,
+                    fontWeight = if (isSelected || day.isToday) FontWeight.Bold else FontWeight.Normal,
+                    color = textColor
+                )
+            }
+
+            // Pending tasks count badge on day cell
+            if (day.pendingTasksCount > 0) {
+                val isOverdueDay = day.date.isBefore(LocalDate.now())
+                val badgeBg = when {
+                    isOverdueDay -> IosRed
+                    day.isToday -> IosOrange
+                    isSelected -> Color.White
+                    else -> IosBlue
+                }
+                val badgeTextColor = if (isSelected && !isOverdueDay && !day.isToday) IosBlue else Color.White
+
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .clip(CircleShape)
+                        .background(badgeBg)
+                        .padding(horizontal = 4.dp, vertical = 0.5.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (day.pendingTasksCount > 9) "9+" else "${day.pendingTasksCount}",
+                        fontSize = 8.sp,
+                        lineHeight = 9.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = badgeTextColor
+                    )
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(2.dp))

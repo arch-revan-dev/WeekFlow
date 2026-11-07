@@ -1,5 +1,6 @@
 package com.weekflow.app.core.designsystem.components
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -14,10 +15,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
@@ -26,21 +27,19 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -50,7 +49,7 @@ import com.weekflow.app.core.designsystem.IosBlue
 import com.weekflow.app.core.designsystem.IosGreen
 import com.weekflow.app.core.designsystem.IosOrange
 import com.weekflow.app.core.designsystem.LocalIosColors
-import kotlinx.coroutines.delay
+import com.weekflow.app.core.focus.FocusTimerManager
 
 @Composable
 fun FocusTimerDialog(
@@ -60,40 +59,31 @@ fun FocusTimerDialog(
     onSessionCompleted: ((Int) -> Unit)? = null
 ) {
     val iosColors = LocalIosColors.current
+    val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
 
-    var selectedMinutes by remember { mutableIntStateOf(defaultMinutes) }
-    var totalSeconds by remember { mutableIntStateOf(defaultMinutes * 60) }
-    var secondsRemaining by remember { mutableIntStateOf(defaultMinutes * 60) }
-    var isRunning by remember { mutableStateOf(false) }
+    val timerState by FocusTimerManager.state.collectAsState()
 
-    LaunchedEffect(isRunning, secondsRemaining) {
-        if (isRunning && secondsRemaining > 0) {
-            delay(1000L)
-            secondsRemaining -= 1
-            if (secondsRemaining == 0) {
-                isRunning = false
-                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                onSessionCompleted?.invoke(selectedMinutes)
-            }
-        }
-    }
-
-    fun setTimerMinutes(mins: Int) {
-        selectedMinutes = mins
-        totalSeconds = mins * 60
-        secondsRemaining = mins * 60
-        isRunning = false
+    LaunchedEffect(initialTitle, defaultMinutes) {
+        FocusTimerManager.prepareIfIdle(
+            context = context,
+            title = initialTitle,
+            defaultMinutes = defaultMinutes,
+            onCompleted = onSessionCompleted
+        )
     }
 
     val progress by animateFloatAsState(
-        targetValue = if (totalSeconds > 0) 1f - (secondsRemaining.toFloat() / totalSeconds.toFloat()) else 0f,
+        targetValue = if (timerState.totalSeconds > 0) {
+            1f - (timerState.secondsRemaining.toFloat() / timerState.totalSeconds.toFloat())
+        } else 0f,
         label = "FocusProgress"
     )
 
-    val minutes = secondsRemaining / 60
-    val seconds = secondsRemaining % 60
+    val minutes = timerState.secondsRemaining / 60
+    val seconds = timerState.secondsRemaining % 60
     val timeFormatted = String.format("%02d:%02d", minutes, seconds)
+    val minuteChoices = remember { (1..180).toList() }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -104,7 +94,7 @@ fun FocusTimerDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(24.dp),
+                    .padding(22.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // Header
@@ -113,7 +103,7 @@ fun FocusTimerDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "🍅 Фокус-таймер",
                             fontSize = 18.sp,
@@ -121,108 +111,130 @@ fun FocusTimerDialog(
                             color = iosColors.textPrimary
                         )
                         Text(
-                            text = initialTitle,
+                            text = timerState.title,
                             fontSize = 13.sp,
                             color = iosColors.textSecondary,
                             maxLines = 1
                         )
                     }
                     IconButton(onClick = onDismiss) {
-                        Icon(imageVector = Icons.Rounded.Close, contentDescription = "Закрыть", tint = iosColors.textSecondary)
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "Свернуть (таймер продолжит работу)",
+                            tint = iosColors.textSecondary
+                        )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                // Preset cards (2-line layout to prevent text clipping)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf(
-                        Triple(15, "15 мин", "Короткий"),
-                        Triple(25, "25 мин", "Помодоро"),
-                        Triple(45, "45 мин", "Урок")
-                    ).forEach { (mins, topLabel, subLabel) ->
-                        val isSelected = selectedMinutes == mins
+                // Custom Wheel Duration Picker when timer is not actively running
+                val isIdleAtStart = !timerState.isRunning && timerState.secondsRemaining == timerState.totalSeconds
+                AnimatedVisibility(visible = isIdleAtStart) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Прокрутите для выбора времени (1–180 мин)",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = iosColors.textSecondary
+                        )
                         Box(
                             modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(if (isSelected) IosBlue.copy(alpha = 0.15f) else iosColors.cardSecondary)
-                                .border(
-                                    width = if (isSelected) 1.5.dp else 0.dp,
-                                    color = if (isSelected) IosBlue else Color.Transparent,
-                                    shape = RoundedCornerShape(10.dp)
-                                )
-                                .clickable {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    setTimerMinutes(mins)
-                                }
-                                .padding(vertical = 8.dp, horizontal = 4.dp),
-                            contentAlignment = Alignment.Center
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(iosColors.cardSecondary.copy(alpha = 0.65f))
+                                .padding(horizontal = 24.dp, vertical = 6.dp)
                         ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
-                            ) {
-                                Text(
-                                    text = topLabel,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isSelected) IosBlue else iosColors.textPrimary,
-                                    maxLines = 1,
-                                    softWrap = false
-                                )
-                                Text(
-                                    text = subLabel,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = if (isSelected) IosBlue else iosColors.textSecondary,
-                                    maxLines = 1,
-                                    softWrap = false
-                                )
-                            }
+                            IosWheelPicker(
+                                items = minuteChoices,
+                                selectedIndex = (timerState.selectedMinutes - 1).coerceIn(0, minuteChoices.lastIndex),
+                                onItemSelected = { _, mins ->
+                                    FocusTimerManager.setDurationMinutes(context, mins, initialTitle)
+                                },
+                                itemLabel = { mins ->
+                                    val hrs = mins / 60
+                                    val rem = mins % 60
+                                    if (hrs > 0) "$mins мин (${hrs} ч ${rem} м)" else "$mins мин"
+                                },
+                                visibleItemsCount = 3,
+                                itemHeight = 36.dp,
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(28.dp))
+                Spacer(modifier = Modifier.height(18.dp))
 
                 // Circular timer display
                 Box(
-                    modifier = Modifier.size(190.dp),
+                    modifier = Modifier.size(176.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     CircularProgressIndicator(
                         progress = { 1f },
-                        modifier = Modifier.size(190.dp),
+                        modifier = Modifier.size(176.dp),
                         color = iosColors.cardSecondary,
-                        strokeWidth = 10.dp
+                        strokeWidth = 9.dp
                     )
                     CircularProgressIndicator(
                         progress = { progress },
-                        modifier = Modifier.size(190.dp),
-                        color = if (isRunning) IosOrange else IosBlue,
-                        strokeWidth = 10.dp
+                        modifier = Modifier.size(176.dp),
+                        color = if (timerState.isRunning) IosOrange else if (timerState.isCompleted) IosGreen else IosBlue,
+                        strokeWidth = 9.dp
                     )
 
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
                             text = timeFormatted,
-                            fontSize = 40.sp,
+                            fontSize = 36.sp,
                             fontWeight = FontWeight.Bold,
                             color = iosColors.textPrimary
                         )
                         Text(
-                            text = if (isRunning) "Идет концентрация" else if (secondsRemaining == 0) "Завершено! 🎉" else "На паузе",
-                            fontSize = 12.sp,
-                            color = if (isRunning) IosOrange else iosColors.textSecondary
+                            text = when {
+                                timerState.isRunning -> "Работает в фоне 🔔"
+                                timerState.isCompleted -> "Завершено! 🎉"
+                                timerState.secondsRemaining < timerState.totalSeconds -> "На паузе"
+                                else -> "Готов к старту"
+                            },
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = if (timerState.isRunning) IosOrange else iosColors.textSecondary
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(28.dp))
+                if (timerState.isRunning) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(IosOrange.copy(alpha = 0.12f))
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.NotificationsActive,
+                            contentDescription = null,
+                            tint = IosOrange,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(5.dp))
+                        Text(
+                            text = "Можно закрыть окно — таймер виден в шторке уведомлений",
+                            fontSize = 10.5.sp,
+                            color = IosOrange,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(18.dp))
 
                 // Control buttons
                 Row(
@@ -233,7 +245,7 @@ fun FocusTimerDialog(
                     IconButton(
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            setTimerMinutes(selectedMinutes)
+                            FocusTimerManager.reset(context)
                         }
                     ) {
                         Icon(
@@ -249,22 +261,24 @@ fun FocusTimerDialog(
                     Button(
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            isRunning = !isRunning
+                            FocusTimerManager.toggleStartPause(context, initialTitle)
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = if (isRunning) IosOrange else IosBlue),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (timerState.isRunning) IosOrange else IosBlue
+                        ),
                         shape = RoundedCornerShape(16.dp),
                         modifier = Modifier
-                            .height(52.dp)
+                            .height(50.dp)
                             .width(150.dp)
                     ) {
                         Icon(
-                            imageVector = if (isRunning) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                            imageVector = if (timerState.isRunning) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                             contentDescription = null,
                             tint = Color.White
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = if (isRunning) "Пауза" else "Старт",
+                            text = if (timerState.isRunning) "Пауза" else "Старт",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Color.White

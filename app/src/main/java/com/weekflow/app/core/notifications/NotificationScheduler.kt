@@ -201,7 +201,13 @@ class NotificationScheduler(
     }
 
     suspend fun scheduleMorningTaskReminder() {
-        val morningTime = LocalTime.of(8, 0)
+        val preferences = preferencesRepository.userPreferences.first()
+        val morningTimeStr = preferences.taskRemindersTime
+        val morningTime = try {
+            LocalTime.parse(morningTimeStr, DateTimeFormatter.ofPattern("HH:mm"))
+        } catch (_: Exception) {
+            LocalTime.of(8, 0)
+        }
         val now = LocalDateTime.now()
         var targetDateTime = LocalDateTime.of(LocalDate.now(), morningTime)
         if (now.isAfter(targetDateTime)) {

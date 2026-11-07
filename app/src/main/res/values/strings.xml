@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">WeekFlow</string>
+    <string name="widget_schedule_label">WeekFlow • Расписание</string>
+    <string name="widget_tasks_label">WeekFlow • Задачи</string>
 </resources>

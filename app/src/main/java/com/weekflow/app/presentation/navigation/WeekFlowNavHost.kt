@@ -31,6 +31,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -134,6 +135,7 @@ fun WeekFlowNavHost(
 
     val scheduleUiState by scheduleViewModel.uiState.collectAsState()
     val tasksUiState by tasksViewModel.uiState.collectAsState()
+    val activeAppProfile = scheduleUiState.activePreset.appProfile
 
     var currentTab by remember { mutableStateOf(NavigationTab.SCHEDULE) }
     var activeSheet by remember { mutableStateOf<ActiveSheet>(ActiveSheet.None) }
@@ -173,6 +175,7 @@ fun WeekFlowNavHost(
         }
     }
 
+    CompositionLocalProvider(LocalAppProfile provides activeAppProfile) {
     Scaffold(
         modifier = modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -650,5 +653,6 @@ fun WeekFlowNavHost(
                 }
             )
         }
+    }
     }
 }

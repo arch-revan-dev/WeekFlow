@@ -3,6 +3,7 @@ package com.weekflow.app.presentation.schedule.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,6 +26,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -40,6 +43,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
+import com.weekflow.app.core.designsystem.IosBlue
 import com.weekflow.app.core.designsystem.IosRed
 import com.weekflow.app.core.designsystem.LocalIosColors
 import com.weekflow.app.core.util.ColorParser
@@ -76,6 +81,7 @@ fun TimelineGridView(
     onEditSlot: (slotId: String) -> Unit,
     onEditEvent: (CalendarEvent) -> Unit,
     onAddSlotWithTime: (startTime: String, endTime: String) -> Unit,
+    onMoveSlotTime: ((slot: Slot, newStartTime: String, newEndTime: String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val iosColors = LocalIosColors.current
@@ -86,8 +92,13 @@ fun TimelineGridView(
     // Full 24 Hours: 00:00 to 23:00
     val hoursCount = 24
     var hourHeightDpVal by remember { mutableFloatStateOf(80f) }
+    val scaleFactor = (hourHeightDpVal / 80f).coerceIn(0.6f, 1.8f)
     val hourHeightDp = hourHeightDpVal.dp
     val timeColWidth = 54.dp
+
+    var draggingSlotId by remember { mutableStateOf<String?>(null) }
+    var dragAccumulatedPx by remember { mutableFloatStateOf(0f) }
+    var dragSnappedSteps15 by remember { mutableIntStateOf(0) }
 
     val now = LocalTime.now()
     val isToday = selectedDate == LocalDate.now()
@@ -350,51 +361,131 @@ fun TimelineGridView(
                     val slot = pos.item.slot
                     val act = activityMap[slot.activityTypeId]
                     val actColor = ColorParser.parseHexColor(act?.colorHex ?: "#007AFF")
+                    val isDraggingThis = draggingSlotId == slot.id
+
+                    val effectiveStartMin = if (isDraggingThis) {
+                        (pos.item.startMinutes + dragSnappedSteps15 * 15).coerceIn(0, 23 * 60 + 45 - durationMin)
+                    } else {
+                        pos.item.startMinutes
+                    }
+                    val effectiveEndMin = (effectiveStartMin + durationMin).coerceAtMost(23 * 60 + 59)
+                    val effectiveYOffsetDp = (effectiveStartMin.toFloat() / 60f) * hourHeightDpVal
+
+                    val displayStartStr = String.format("%02d:%02d", effectiveStartMin / 60, effectiveStartMin % 60)
+                    val displayEndStr = String.format("%02d:%02d", effectiveEndMin / 60, effectiveEndMin % 60)
+
+                    val vertPadDp = (4.5f * scaleFactor).coerceIn(2f, 7f).dp
+                    val horizPadDp = (7f * scaleFactor).coerceIn(4f, 10f).dp
+                    val titleFontSp = (11.5f * scaleFactor).coerceIn(8f, 15f)
+                    val timeFontSp = (9.5f * scaleFactor).coerceIn(7f, 13f)
 
                     Box(
                         modifier = Modifier
-                            .offset(x = xOffset, y = yOffsetDp.dp)
+                            .offset(x = xOffset, y = effectiveYOffsetDp.dp)
                             .width(itemWidth)
                             .height(itemHeightDp.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(actColor.copy(alpha = 0.16f))
-                            .border(1.5.dp, actColor, RoundedCornerShape(10.dp))
+                            .zIndex(if (isDraggingThis) 10f else 1f)
+                            .clip(RoundedCornerShape((9f * scaleFactor).coerceIn(6f, 12f).dp))
+                            .background(
+                                if (isDraggingThis) actColor.copy(alpha = 0.30f) else actColor.copy(alpha = 0.16f)
+                            )
+                            .border(
+                                width = if (isDraggingThis) 2.2.dp else 1.5.dp,
+                                color = if (isDraggingThis) IosBlue else actColor,
+                                shape = RoundedCornerShape((9f * scaleFactor).coerceIn(6f, 12f).dp)
+                            )
+                            .pointerInput(slot.id, hourHeightDpVal) {
+                                val step15Px = (hourHeightDp.toPx() / 4f).coerceAtLeast(4f)
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        draggingSlotId = slot.id
+                                        dragAccumulatedPx = 0f
+                                        dragSnappedSteps15 = 0
+                                    },
+                                    onDragEnd = {
+                                        val steps = dragSnappedSteps15
+                                        draggingSlotId = null
+                                        dragAccumulatedPx = 0f
+                                        dragSnappedSteps15 = 0
+                                        if (steps != 0 && onMoveSlotTime != null) {
+                                            val newStartMin = (pos.item.startMinutes + steps * 15).coerceIn(0, 23 * 60 + 45 - durationMin)
+                                            val newEndMin = (newStartMin + durationMin).coerceAtMost(23 * 60 + 59)
+                                            val newStartStr = String.format("%02d:%02d", newStartMin / 60, newStartMin % 60)
+                                            val newEndStr = String.format("%02d:%02d", newEndMin / 60, newEndMin % 60)
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            onMoveSlotTime(slot, newStartStr, newEndStr)
+                                        }
+                                    },
+                                    onDragCancel = {
+                                        draggingSlotId = null
+                                        dragAccumulatedPx = 0f
+                                        dragSnappedSteps15 = 0
+                                    },
+                                    onDrag = { change, dragAmount ->
+                                        change.consume()
+                                        dragAccumulatedPx += dragAmount.y
+                                        // Require at least 12px threshold before snapping to avoid accidental shift on long-press
+                                        val candidateSteps = if (kotlin.math.abs(dragAccumulatedPx) < 12f) {
+                                            0
+                                        } else {
+                                            (dragAccumulatedPx / step15Px).roundToInt()
+                                        }
+                                        if (candidateSteps != dragSnappedSteps15) {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            dragSnappedSteps15 = candidateSteps
+                                        }
+                                    }
+                                )
+                            }
                             .clickable {
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 onEditSlot(slot.id)
                             }
-                            .padding(horizontal = 8.dp, vertical = 6.dp)
+                            .padding(horizontal = horizPadDp, vertical = vertPadDp)
                     ) {
-                        Column {
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.Center
+                        ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = act?.name ?: "Занятие",
-                                    fontSize = 12.sp,
+                                    text = act?.shortName?.ifBlank { act.name } ?: act?.name ?: "Занятие",
+                                    fontSize = titleFontSp.sp,
+                                    lineHeight = (titleFontSp * 1.12f).sp,
                                     fontWeight = FontWeight.Bold,
                                     color = iosColors.textPrimary,
                                     maxLines = 1,
+                                    softWrap = false,
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f)
                                 )
                                 Text(
-                                    text = "${slot.startTime}–${slot.endTime}",
-                                    fontSize = 10.sp,
+                                    text = "$displayStartStr–$displayEndStr",
+                                    fontSize = timeFontSp.sp,
+                                    lineHeight = (timeFontSp * 1.05f).sp,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = actColor
+                                    color = if (isDraggingThis) IosBlue else actColor,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    modifier = Modifier.padding(start = 4.dp)
                                 )
                             }
 
                             val loc = slot.customLocation?.takeIf { it.isNotBlank() } ?: act?.defaultLocation
                             if (!loc.isNullOrBlank() && itemHeightDp >= 44f) {
+                                val locFontSp = (9.5f * scaleFactor).coerceIn(7.5f, 12.5f)
                                 Text(
                                     text = loc,
-                                    fontSize = 10.sp,
+                                    fontSize = locFontSp.sp,
+                                    lineHeight = (locFontSp * 1.1f).sp,
                                     color = iosColors.textSecondary,
                                     maxLines = 1,
+                                    softWrap = false,
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
@@ -403,20 +494,24 @@ fun TimelineGridView(
                 } else if (pos.item.event != null) {
                     val event = pos.item.event
                     val eventColor = ColorParser.parseHexColor(event.colorHex)
+                    val vertPadDp = (4.5f * scaleFactor).coerceIn(2f, 7f).dp
+                    val horizPadDp = (7f * scaleFactor).coerceIn(4f, 10f).dp
+                    val titleFontSp = (11.5f * scaleFactor).coerceIn(8f, 15f)
+                    val timeFontSp = (9.5f * scaleFactor).coerceIn(7f, 13f)
 
                     Box(
                         modifier = Modifier
                             .offset(x = xOffset, y = yOffsetDp.dp)
                             .width(itemWidth)
                             .height(itemHeightDp.dp)
-                            .clip(RoundedCornerShape(10.dp))
+                            .clip(RoundedCornerShape((9f * scaleFactor).coerceIn(6f, 12f).dp))
                             .background(eventColor.copy(alpha = 0.16f))
-                            .border(1.5.dp, eventColor, RoundedCornerShape(10.dp))
+                            .border(1.5.dp, eventColor, RoundedCornerShape((9f * scaleFactor).coerceIn(6f, 12f).dp))
                             .clickable {
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 onEditEvent(event)
                             }
-                            .padding(horizontal = 8.dp, vertical = 6.dp)
+                            .padding(horizontal = horizPadDp, vertical = vertPadDp)
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -425,18 +520,24 @@ fun TimelineGridView(
                         ) {
                             Text(
                                 text = event.title,
-                                fontSize = 12.sp,
+                                fontSize = titleFontSp.sp,
+                                lineHeight = (titleFontSp * 1.12f).sp,
                                 fontWeight = FontWeight.Bold,
                                 color = iosColors.textPrimary,
                                 maxLines = 1,
+                                softWrap = false,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f)
                             )
                             Text(
                                 text = "${event.startTime ?: ""}–${event.endTime ?: ""}",
-                                fontSize = 10.sp,
+                                fontSize = timeFontSp.sp,
+                                lineHeight = (timeFontSp * 1.05f).sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = eventColor
+                                color = eventColor,
+                                maxLines = 1,
+                                softWrap = false,
+                                modifier = Modifier.padding(start = 4.dp)
                             )
                         }
                     }

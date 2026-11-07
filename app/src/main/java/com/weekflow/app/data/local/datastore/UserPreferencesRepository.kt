@@ -57,6 +57,7 @@ class UserPreferencesRepository(context: Context) : PreferencesRepository {
         val EVENING_SUMMARY_ENABLED = booleanPreferencesKey("evening_summary_enabled")
         val EVENING_SUMMARY_TIME = stringPreferencesKey("evening_summary_time")
         val TASK_REMINDERS_ENABLED = booleanPreferencesKey("task_reminders_enabled")
+        val TASK_REMINDERS_TIME = stringPreferencesKey("task_reminders_time")
         val IS_SATURDAY_WEEKEND = booleanPreferencesKey("is_saturday_weekend")
         val ACTIVE_PRESET_ID = stringPreferencesKey("active_preset_id")
         val SHOW_ALL_PRESETS_TASKS = booleanPreferencesKey("show_all_presets_tasks")
@@ -104,6 +105,7 @@ class UserPreferencesRepository(context: Context) : PreferencesRepository {
             val eveningSummaryEnabled = preferences[PreferencesKeys.EVENING_SUMMARY_ENABLED] ?: true
             val eveningSummaryTime = preferences[PreferencesKeys.EVENING_SUMMARY_TIME] ?: "20:00"
             val taskRemindersEnabled = preferences[PreferencesKeys.TASK_REMINDERS_ENABLED] ?: true
+            val taskRemindersTime = preferences[PreferencesKeys.TASK_REMINDERS_TIME] ?: "08:00"
             val isSaturdayWeekend = preferences[PreferencesKeys.IS_SATURDAY_WEEKEND] ?: false
             val activePresetId = (preferences[PreferencesKeys.ACTIVE_PRESET_ID] ?: SchedulePreset.DEFAULT_ID)
                 .ifBlank { SchedulePreset.DEFAULT_ID }
@@ -131,6 +133,7 @@ class UserPreferencesRepository(context: Context) : PreferencesRepository {
                 eveningSummaryEnabled = eveningSummaryEnabled,
                 eveningSummaryTime = eveningSummaryTime,
                 taskRemindersEnabled = taskRemindersEnabled,
+                taskRemindersTime = taskRemindersTime,
                 isSaturdayWeekend = isSaturdayWeekend,
                 activePresetId = activePresetId,
                 showAllPresetsTasks = showAllPresetsTasks,
@@ -256,6 +259,12 @@ class UserPreferencesRepository(context: Context) : PreferencesRepository {
     override suspend fun updateTaskRemindersEnabled(enabled: Boolean) {
         appContext.dataStore.edit { preferences ->
             preferences[PreferencesKeys.TASK_REMINDERS_ENABLED] = enabled
+        }
+    }
+
+    override suspend fun updateTaskRemindersTime(time: String) {
+        appContext.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.TASK_REMINDERS_TIME] = time
         }
     }
 
