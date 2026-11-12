@@ -43,7 +43,6 @@ import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.Flag
-import androidx.compose.material.icons.rounded.Grade
 import androidx.compose.material.icons.rounded.HourglassEmpty
 import androidx.compose.material.icons.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
@@ -93,8 +92,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
-
-private val QUICK_GRADE_OPTIONS = listOf("5", "4", "3", "2", "Зачёт")
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -486,14 +483,6 @@ fun TaskDetailSheet(
                 }
             }
 
-            // Grade Section
-            TaskGradeSection(
-                grade = task.grade,
-                onGradeChanged = { newGrade ->
-                    onUpdateTask(task.copy(grade = newGrade))
-                }
-            )
-
             // Attachments Section
             TaskAttachmentsSection(
                 attachments = task.attachments,
@@ -710,169 +699,6 @@ private fun TopActionIconButton(
             tint = tint,
             modifier = Modifier.size(16.dp)
         )
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-internal fun TaskGradeSection(
-    grade: String?,
-    onGradeChanged: (String?) -> Unit,
-    applyOnType: Boolean = false,
-    modifier: Modifier = Modifier
-) {
-    val iosColors = LocalIosColors.current
-    val haptic = LocalHapticFeedback.current
-    val normalizedGrade = grade?.trim()?.takeIf { it.isNotBlank() }
-    var customInput by remember {
-        mutableStateOf(if (normalizedGrade != null && normalizedGrade !in QUICK_GRADE_OPTIONS) normalizedGrade else "")
-    }
-
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(iosColors.cardSecondary)
-            .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Grade,
-                    contentDescription = null,
-                    tint = IosBlue,
-                    modifier = Modifier.size(16.dp)
-                )
-                Text(
-                    text = "Оценка",
-                    fontSize = 13.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = iosColors.textPrimary
-                )
-            }
-
-            if (normalizedGrade != null) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(IosBlue.copy(alpha = 0.14f))
-                            .padding(horizontal = 8.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            text = normalizedGrade,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = IosBlue
-                        )
-                    }
-                    Box(
-                        modifier = Modifier
-                            .size(22.dp)
-                            .clip(CircleShape)
-                            .background(iosColors.card)
-                            .clickable {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                customInput = ""
-                                onGradeChanged(null)
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Close,
-                            contentDescription = "Очистить оценку",
-                            tint = iosColors.textSecondary,
-                            modifier = Modifier.size(13.dp)
-                        )
-                    }
-                }
-            }
-        }
-
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            QUICK_GRADE_OPTIONS.forEach { option ->
-                val selected = normalizedGrade == option
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(if (selected) IosBlue else iosColors.card)
-                        .clickable {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            customInput = ""
-                            onGradeChanged(if (selected) null else option)
-                        }
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Text(
-                        text = option,
-                        fontSize = 13.sp,
-                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                        color = if (selected) Color.White else iosColors.textPrimary
-                    )
-                }
-            }
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedTextField(
-                value = customInput,
-                onValueChange = { text ->
-                    customInput = text
-                    if (applyOnType) {
-                        onGradeChanged(text.trim().takeIf { it.isNotBlank() })
-                    }
-                },
-                placeholder = { Text("Своя оценка", fontSize = 12.5.sp) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(
-                    onDone = {
-                        val trimmed = customInput.trim()
-                        onGradeChanged(trimmed.takeIf { it.isNotBlank() })
-                    }
-                ),
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.weight(1f)
-            )
-            if (!applyOnType && customInput.isNotBlank() && customInput.trim() != normalizedGrade) {
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(IosBlue)
-                        .clickable {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onGradeChanged(customInput.trim())
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Check,
-                        contentDescription = "Применить",
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-        }
     }
 }
 

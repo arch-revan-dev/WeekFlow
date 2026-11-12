@@ -161,7 +161,8 @@ class ScheduleRepositoryImpl(
                         customNote = slot.customNote,
                         periodOrder = slot.periodOrder,
                         presetId = targetPreset,
-                        sessionItems = slot.sessionItems
+                        sessionItems = slot.sessionItems,
+                        grade = slot.grade?.trim()?.takeIf { it.isNotEmpty() }
                     )
                 )
             }
@@ -197,7 +198,6 @@ class ScheduleRepositoryImpl(
                         priority = task.priority,
                         subtasks = task.subtasks,
                         presetId = targetPreset,
-                        grade = task.grade,
                         attachments = task.attachments
                     )
                 )
@@ -466,7 +466,8 @@ class ScheduleRepositoryImpl(
                         customNote = slot.customNote,
                         periodOrder = slot.periodOrder,
                         presetId = targetPreset,
-                        sessionItems = slot.sessionItems
+                        sessionItems = slot.sessionItems,
+                        grade = slot.grade?.trim()?.takeIf { it.isNotEmpty() }
                     )
                 )
             }
@@ -502,7 +503,6 @@ class ScheduleRepositoryImpl(
                         priority = task.priority,
                         subtasks = task.subtasks,
                         presetId = targetPreset,
-                        grade = task.grade,
                         attachments = task.attachments
                     )
                 )
@@ -545,7 +545,8 @@ class ScheduleRepositoryImpl(
                         customNote = slot.customNote,
                         periodOrder = slot.periodOrder,
                         presetId = targetPreset,
-                        sessionItems = slot.sessionItems
+                        sessionItems = slot.sessionItems,
+                        grade = slot.grade?.trim()?.takeIf { it.isNotEmpty() }
                     )
                 )
             }
@@ -581,7 +582,6 @@ class ScheduleRepositoryImpl(
                         priority = task.priority,
                         subtasks = task.subtasks,
                         presetId = targetPreset,
-                        grade = task.grade,
                         attachments = task.attachments
                     )
                 )
@@ -625,7 +625,8 @@ class ScheduleRepositoryImpl(
                     customType = domain.customType,
                     customNote = domain.customNote,
                     periodOrder = domain.periodOrder,
-                    sessionItems = domain.sessionItems
+                    sessionItems = domain.sessionItems,
+                    grade = domain.grade
                 )
             }
 
@@ -661,7 +662,6 @@ class ScheduleRepositoryImpl(
                     note = domain.note,
                     priority = domain.priority,
                     subtasks = domain.subtasks,
-                    grade = domain.grade,
                     attachments = domain.attachments
                 )
             }

@@ -37,7 +37,6 @@ import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Event
-import androidx.compose.material.icons.rounded.Grade
 import androidx.compose.material.icons.rounded.HourglassEmpty
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
@@ -268,11 +267,9 @@ fun TaskItemRow(
                         }
                     }
 
-                    val gradeValue = task.grade?.trim()?.takeIf { it.isNotBlank() }
                     val hasMetadata = linkedActivity != null ||
                         taskDueDate != null ||
                         task.subtasks.isNotEmpty() ||
-                        gradeValue != null ||
                         task.attachments.isNotEmpty() ||
                         hasLongContent
 
@@ -351,36 +348,6 @@ fun TaskItemRow(
                                                 fontSize = 11.sp,
                                                 fontWeight = if (isOverdue || isDueToday) FontWeight.SemiBold else FontWeight.Medium,
                                                 color = dateBadgeColor,
-                                                maxLines = 1,
-                                                softWrap = false
-                                            )
-                                        }
-                                    }
-                                }
-
-                                // Grade pill
-                                gradeValue?.let { grade ->
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(6.dp))
-                                            .background(IosBlue.copy(alpha = 0.12f))
-                                            .padding(horizontal = 6.dp, vertical = 2.5.dp)
-                                    ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(3.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Rounded.Grade,
-                                                contentDescription = null,
-                                                tint = IosBlue,
-                                                modifier = Modifier.size(11.dp)
-                                            )
-                                            Text(
-                                                text = grade,
-                                                fontSize = 10.5.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = IosBlue,
                                                 maxLines = 1,
                                                 softWrap = false
                                             )

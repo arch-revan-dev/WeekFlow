@@ -26,7 +26,7 @@ import com.weekflow.app.data.local.db.entity.VacationEntity
         TaskEntity::class,
         VacationEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class WeekFlowDatabase : RoomDatabase() {
@@ -39,6 +39,46 @@ abstract class WeekFlowDatabase : RoomDatabase() {
 
     companion object {
         const val DATABASE_NAME = "weekflow_database.db"
+
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `slots` ADD COLUMN `grade` TEXT")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `tasks_new` (
+                        `id` TEXT NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `dueDateIso` TEXT,
+                        `linkedSlotId` TEXT,
+                        `linkedActivityId` TEXT,
+                        `isCompleted` INTEGER NOT NULL,
+                        `note` TEXT,
+                        `priority` TEXT NOT NULL,
+                        `subtasksJson` TEXT NOT NULL DEFAULT '[]',
+                        `presetId` TEXT NOT NULL DEFAULT 'default',
+                        `attachmentsJson` TEXT NOT NULL DEFAULT '[]',
+                        PRIMARY KEY(`id`),
+                        FOREIGN KEY(`linkedActivityId`) REFERENCES `activities`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL,
+                        FOREIGN KEY(`linkedSlotId`) REFERENCES `slots`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO `tasks_new` (`id`, `title`, `dueDateIso`, `linkedSlotId`, `linkedActivityId`, `isCompleted`, `note`, `priority`, `subtasksJson`, `presetId`, `attachmentsJson`)
+                    SELECT `id`, `title`, `dueDateIso`, `linkedSlotId`, `linkedActivityId`, `isCompleted`, `note`, `priority`, `subtasksJson`, `presetId`, `attachmentsJson`
+                    FROM `tasks`
+                    """.trimIndent()
+                )
+                db.execSQL("DROP TABLE `tasks`")
+                db.execSQL("ALTER TABLE `tasks_new` RENAME TO `tasks`")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_dueDateIso` ON `tasks` (`dueDateIso`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_linkedActivityId` ON `tasks` (`linkedActivityId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_linkedSlotId` ON `tasks` (`linkedSlotId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_isCompleted` ON `tasks` (`isCompleted`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_presetId` ON `tasks` (`presetId`)")
+            }
+        }
 
         val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {

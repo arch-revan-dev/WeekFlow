@@ -140,7 +140,8 @@ object JsonImportExportManager {
                     activityTypeId = targetActId,
                     startTime = normStartTime,
                     endTime = normEndTime,
-                    periodOrder = slot.periodOrder.coerceAtLeast(0)
+                    periodOrder = slot.periodOrder.coerceAtLeast(0),
+                    grade = slot.grade?.trim()?.takeIf { it.isNotEmpty() }
                 )
             )
         }
@@ -184,7 +185,6 @@ object JsonImportExportManager {
                     dueDateIso = cleanDueDate,
                     linkedActivityId = task.linkedActivityId?.takeIf { existingActIds.contains(it) },
                     linkedSlotId = task.linkedSlotId?.takeIf { slotId -> validSlots.any { it.id == slotId } },
-                    grade = task.grade?.trim()?.takeIf { it.isNotEmpty() },
                     attachments = task.attachments.filter { it.displayName.isNotBlank() && it.localPath.isNotBlank() }
                 )
             )

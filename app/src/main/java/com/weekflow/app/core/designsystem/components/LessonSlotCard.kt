@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Grade
 import androidx.compose.material.icons.rounded.HourglassTop
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Person
@@ -370,6 +371,55 @@ fun LessonSlotCard(
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = iosColors.textSecondary
+                                )
+                            }
+                        }
+
+                        val gradeValue = if (appProfile.supportsGrades) {
+                            details.slot.grade?.trim()?.takeIf { it.isNotBlank() }
+                        } else {
+                            null
+                        }
+                        gradeValue?.let { gradeText ->
+                            val isMinimal = cardStyle == ScheduleCardStyle.MINIMAL
+                            val pillColor = if (isMinimal) iosColors.textPrimary else activityColor
+                            val pillBg = if (isMinimal) {
+                                if (isDark) Color(0xFF34343C) else Color(0xFFEBEBF2)
+                            } else {
+                                activityColor.copy(alpha = if (isDark) 0.22f else 0.14f)
+                            }
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(pillBg)
+                                    .then(
+                                        if (cardStyle == ScheduleCardStyle.OUTLINED) {
+                                            Modifier.border(
+                                                width = 0.8.dp,
+                                                color = activityColor.copy(alpha = if (isDark) 0.42f else 0.30f),
+                                                shape = RoundedCornerShape(6.dp)
+                                            )
+                                        } else {
+                                            Modifier
+                                        }
+                                    )
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Grade,
+                                    contentDescription = null,
+                                    tint = pillColor,
+                                    modifier = Modifier.size(11.dp)
+                                )
+                                Text(
+                                    text = gradeText,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = pillColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }

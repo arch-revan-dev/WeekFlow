@@ -131,7 +131,8 @@ data class Slot(
     val customNote: String? = null,
     val periodOrder: Int = 1,
     val presetId: String = SchedulePreset.DEFAULT_ID,
-    val sessionItems: List<SubtaskItem> = emptyList()
+    val sessionItems: List<SubtaskItem> = emptyList(),
+    val grade: String? = null
 ) {
     fun parseStartTime(): LocalTime = try {
         LocalTime.parse(startTime, DateTimeFormatter.ofPattern("HH:mm"))
@@ -204,7 +205,6 @@ data class Task(
     val priority: TaskPriority = TaskPriority.NONE,
     val subtasks: List<SubtaskItem> = emptyList(),
     val presetId: String = SchedulePreset.DEFAULT_ID,
-    val grade: String? = null,
     val attachments: List<TaskAttachment> = emptyList()
 ) {
     fun parseDueDate(): LocalDate? = dueDateIso?.let {

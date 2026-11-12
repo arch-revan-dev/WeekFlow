@@ -152,7 +152,8 @@ data class SlotEntity(
     @ColumnInfo(defaultValue = "'default'")
     val presetId: String = SchedulePreset.DEFAULT_ID,
     @ColumnInfo(defaultValue = "'[]'")
-    val sessionItemsJson: String = "[]"
+    val sessionItemsJson: String = "[]",
+    val grade: String? = null
 ) {
     fun toDomain(): Slot {
         val parsedItems = try {
@@ -174,7 +175,8 @@ data class SlotEntity(
             customNote = customNote,
             periodOrder = periodOrder,
             presetId = presetId.ifBlank { SchedulePreset.DEFAULT_ID },
-            sessionItems = parsedItems
+            sessionItems = parsedItems,
+            grade = grade
         )
     }
 
@@ -192,7 +194,8 @@ data class SlotEntity(
             customNote = domain.customNote,
             periodOrder = domain.periodOrder,
             presetId = domain.presetId.ifBlank { SchedulePreset.DEFAULT_ID },
-            sessionItemsJson = try { subtaskJsonParser.encodeToString(domain.sessionItems) } catch (_: Exception) { "[]" }
+            sessionItemsJson = try { subtaskJsonParser.encodeToString(domain.sessionItems) } catch (_: Exception) { "[]" },
+            grade = domain.grade
         )
     }
 }
@@ -288,7 +291,6 @@ data class TaskEntity(
     val subtasksJson: String = "[]",
     @ColumnInfo(defaultValue = "'default'")
     val presetId: String = SchedulePreset.DEFAULT_ID,
-    val grade: String? = null,
     @ColumnInfo(defaultValue = "'[]'")
     val attachmentsJson: String = "[]"
 ) {
@@ -316,7 +318,6 @@ data class TaskEntity(
             priority = try { TaskPriority.valueOf(priority) } catch (_: Exception) { TaskPriority.NONE },
             subtasks = parsedSubtasks,
             presetId = presetId.ifBlank { SchedulePreset.DEFAULT_ID },
-            grade = grade,
             attachments = parsedAttachments
         )
     }
@@ -346,7 +347,6 @@ data class TaskEntity(
                 priority = domain.priority.name,
                 subtasksJson = serializedSubtasks,
                 presetId = domain.presetId.ifBlank { SchedulePreset.DEFAULT_ID },
-                grade = domain.grade,
                 attachmentsJson = serializedAttachments
             )
         }

@@ -35,7 +35,8 @@ data class SlotDto(
     val customType: String? = null,
     val customNote: String? = null,
     val periodOrder: Int = 1,
-    val sessionItems: List<SubtaskItem> = emptyList()
+    val sessionItems: List<SubtaskItem> = emptyList(),
+    val grade: String? = null
 )
 
 @Serializable
@@ -63,6 +64,5 @@ data class TaskDto(
     val note: String? = null,
     val priority: TaskPriority = TaskPriority.NONE,
     val subtasks: List<SubtaskItem> = emptyList(),
-    val grade: String? = null,
     val attachments: List<TaskAttachment> = emptyList()
 )

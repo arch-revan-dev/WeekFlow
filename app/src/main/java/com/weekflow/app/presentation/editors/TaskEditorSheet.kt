@@ -140,7 +140,6 @@ fun TaskEditorSheet(
     var priority by remember(initialTask?.id) {
         mutableStateOf(initialTask?.priority ?: TaskPriority.NONE)
     }
-    var grade by remember(initialTask?.id) { mutableStateOf(initialTask?.grade) }
     var attachments by remember(initialTask?.id) {
         mutableStateOf(initialTask?.attachments ?: emptyList())
     }
@@ -680,13 +679,6 @@ fun TaskEditorSheet(
                 maxLines = 8
             )
 
-            // Grade Section
-            TaskGradeSection(
-                grade = grade,
-                onGradeChanged = { grade = it },
-                applyOnType = true
-            )
-
             // Attachments Section
             TaskAttachmentsSection(
                 attachments = attachments,
@@ -847,7 +839,6 @@ fun TaskEditorSheet(
                             priority = priority,
                             subtasks = finalSubtasks,
                             presetId = initialTask?.presetId?.ifBlank { presetId } ?: presetId,
-                            grade = grade?.trim()?.takeIf { it.isNotBlank() },
                             attachments = attachments
                         )
                         onSave(task)

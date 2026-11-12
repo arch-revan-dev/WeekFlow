@@ -313,13 +313,6 @@ class TasksViewModel(
         }
     }
 
-    fun updateTaskGrade(task: Task, grade: String?) {
-        val normalizedGrade = grade?.trim()?.takeIf { it.isNotEmpty() }
-        viewModelScope.launch {
-            scheduleRepository.upsertTask(task.copy(grade = normalizedGrade))
-        }
-    }
-
     fun updateTaskAttachments(task: Task, attachments: List<TaskAttachment>) {
         viewModelScope.launch {
             scheduleRepository.upsertTask(task.copy(attachments = attachments))

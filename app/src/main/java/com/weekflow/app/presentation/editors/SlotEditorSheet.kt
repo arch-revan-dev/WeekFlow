@@ -27,6 +27,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Grade
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -52,6 +53,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.weekflow.app.core.designsystem.IosBlue
@@ -383,6 +385,7 @@ fun SlotEditorSheet(
     var customLocation by remember(initialSlot?.id) { mutableStateOf(initialSlot?.customLocation ?: "") }
     var customInstructor by remember(initialSlot?.id) { mutableStateOf(initialSlot?.customInstructor ?: "") }
     var customType by remember(initialSlot?.id) { mutableStateOf(initialSlot?.customType ?: "") }
+    var grade by remember(initialSlot?.id) { mutableStateOf(initialSlot?.grade) }
 
     // HEALTH workout exercises ONLY
     val setOptions = remember { (1..20).toList() }
@@ -1084,6 +1087,14 @@ fun SlotEditorSheet(
                 }
             }
 
+            // 8. Grade (ONLY for profiles supporting grades: STUDY, UNIVERSITY, UNIVERSAL)
+            if (appProfile.supportsGrades) {
+                SlotGradeSection(
+                    grade = grade,
+                    onGradeChange = { grade = it }
+                )
+            }
+
             // Duplicate day picker (shown when toggled)
             if (initialSlot != null) {
                 AnimatedVisibility(visible = showDuplicatePicker) {
@@ -1130,7 +1141,8 @@ fun SlotEditorSheet(
                                                 customNote = initialSlot.customNote,
                                                 periodOrder = if (appProfile.defaultUsePeriodNumbers) periodOrder else periodOrder.coerceAtLeast(1),
                                                 presetId = initialSlot.presetId.ifBlank { presetId },
-                                                sessionItems = if (appProfile.supportsWorkouts) sessionItems else emptyList()
+                                                sessionItems = if (appProfile.supportsWorkouts) sessionItems else emptyList(),
+                                                grade = null
                                             )
                                             if (onDuplicateSlot != null) {
                                                 onDuplicateSlot(duplicated, day)
@@ -1172,7 +1184,8 @@ fun SlotEditorSheet(
                             customNote = initialSlot?.customNote,
                             periodOrder = if (appProfile.defaultUsePeriodNumbers) periodOrder else periodOrder.coerceAtLeast(1),
                             presetId = initialSlot?.presetId?.ifBlank { presetId } ?: presetId,
-                            sessionItems = if (appProfile.supportsWorkouts) sessionItems else emptyList()
+                            sessionItems = if (appProfile.supportsWorkouts) sessionItems else emptyList(),
+                            grade = if (appProfile.supportsGrades) grade?.trim()?.takeIf { it.isNotBlank() } else null
                         )
                         onSave(slot)
                         onDismiss()
@@ -1229,5 +1242,128 @@ fun SlotEditorSheet(
                 }
             }
         }
+    }
+}
+
+private val QUICK_SLOT_GRADE_OPTIONS = listOf("5", "4", "3", "2", "Зачёт")
+
+@Composable
+private fun SlotGradeSection(
+    grade: String?,
+    onGradeChange: (String?) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val iosColors = LocalIosColors.current
+    val haptic = LocalHapticFeedback.current
+    val cleanGrade = grade?.trim()?.takeIf { it.isNotBlank() }
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(iosColors.cardSecondary.copy(alpha = 0.7f))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Grade,
+                    contentDescription = null,
+                    tint = IosBlue,
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = "Оценка",
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = iosColors.textPrimary
+                )
+            }
+
+            if (cleanGrade != null) {
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(IosBlue.copy(alpha = 0.14f))
+                        .clickable {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onGradeChange(null)
+                        }
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = cleanGrade,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = IosBlue,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = "Очистить оценку",
+                        tint = IosBlue,
+                        modifier = Modifier.size(13.dp)
+                    )
+                }
+            }
+        }
+
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            items(QUICK_SLOT_GRADE_OPTIONS) { option ->
+                val isSelected = cleanGrade.equals(option, ignoreCase = true)
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isSelected) IosBlue else iosColors.card)
+                        .border(
+                            BorderStroke(
+                                width = 1.dp,
+                                color = if (isSelected) IosBlue else iosColors.separator.copy(alpha = 0.5f)
+                            ),
+                            RoundedCornerShape(8.dp)
+                        )
+                        .clickable {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onGradeChange(if (isSelected) null else option)
+                        }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = option,
+                        fontSize = 12.5.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        color = if (isSelected) Color.White else iosColors.textPrimary,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
+            }
+        }
+
+        OutlinedTextField(
+            value = grade ?: "",
+            onValueChange = { input ->
+                onGradeChange(input.takeIf { it.isNotEmpty() })
+            },
+            label = { Text("Своя оценка") },
+            placeholder = { Text("Например: 5+, Отл, 92/100") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }

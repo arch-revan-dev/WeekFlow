@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -47,6 +48,7 @@ import androidx.compose.ui.zIndex
 import com.weekflow.app.core.designsystem.IosBlue
 import com.weekflow.app.core.designsystem.IosRed
 import com.weekflow.app.core.designsystem.LocalIosColors
+import com.weekflow.app.core.localization.LocalAppProfile
 import com.weekflow.app.core.util.ColorParser
 import com.weekflow.app.domain.model.Activity
 import com.weekflow.app.domain.model.CalendarEvent
@@ -85,6 +87,7 @@ fun TimelineGridView(
     modifier: Modifier = Modifier
 ) {
     val iosColors = LocalIosColors.current
+    val appProfile = LocalAppProfile.current
     val haptic = LocalHapticFeedback.current
     val density = LocalDensity.current
     val activityMap = remember(activities) { activities.associateBy { it.id } }
@@ -477,17 +480,58 @@ fun TimelineGridView(
                             }
 
                             val loc = slot.customLocation?.takeIf { it.isNotBlank() } ?: act?.defaultLocation
-                            if (!loc.isNullOrBlank() && itemHeightDp >= 44f) {
-                                val locFontSp = (9.5f * scaleFactor).coerceIn(7.5f, 12.5f)
-                                Text(
-                                    text = loc,
-                                    fontSize = locFontSp.sp,
-                                    lineHeight = (locFontSp * 1.1f).sp,
-                                    color = iosColors.textSecondary,
-                                    maxLines = 1,
-                                    softWrap = false,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                            val gradeText = if (appProfile.supportsGrades && itemHeightDp >= 44f && itemWidth >= 56.dp) {
+                                slot.grade?.trim()?.takeIf { it.isNotBlank() }
+                            } else {
+                                null
+                            }
+                            if ((!loc.isNullOrBlank() && itemHeightDp >= 44f) || gradeText != null) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = (1.5f * scaleFactor).coerceIn(1f, 3f).dp),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (!loc.isNullOrBlank() && itemHeightDp >= 44f) {
+                                        val locFontSp = (9.5f * scaleFactor).coerceIn(7.5f, 12.5f)
+                                        Text(
+                                            text = loc,
+                                            fontSize = locFontSp.sp,
+                                            lineHeight = (locFontSp * 1.1f).sp,
+                                            color = iosColors.textSecondary,
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                    if (gradeText != null) {
+                                        val gradeFontSp = (8.5f * scaleFactor).coerceIn(7f, 11.5f)
+                                        Box(
+                                            modifier = Modifier
+                                                .widthIn(max = (itemWidth * 0.48f).coerceAtLeast(28.dp))
+                                                .clip(RoundedCornerShape((4f * scaleFactor).coerceIn(3f, 6f).dp))
+                                                .background(IosBlue.copy(alpha = if (iosColors.isDark) 0.26f else 0.15f))
+                                                .padding(
+                                                    horizontal = (4.5f * scaleFactor).coerceIn(3f, 6f).dp,
+                                                    vertical = (1f * scaleFactor).coerceIn(0.5f, 2f).dp
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = gradeText,
+                                                fontSize = gradeFontSp.sp,
+                                                lineHeight = (gradeFontSp * 1.1f).sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = IosBlue,
+                                                maxLines = 1,
+                                                softWrap = false,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

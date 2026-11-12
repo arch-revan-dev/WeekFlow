@@ -37,6 +37,7 @@ enum class AppProfile(
     val defaultLessonTypes: List<String>,
     val defaultCategory: ActivityCategory,
     val defaultBellTimes: List<Pair<String, String>>,
+    val supportsGrades: Boolean = false,
     val supportsWorkouts: Boolean = false,
     val sessionSectionTitle: String = "",
     val sessionItemTerm: String = "",
@@ -77,7 +78,8 @@ enum class AppProfile(
             "13:20" to "14:05",
             "14:15" to "15:00",
             "15:05" to "15:50"
-        )
+        ),
+        supportsGrades = true
     ),
     UNIVERSITY(
         title = "ВУЗ / Колледж",
@@ -109,7 +111,8 @@ enum class AppProfile(
             "16:30" to "18:05",
             "18:15" to "19:50",
             "20:00" to "21:35"
-        )
+        ),
+        supportsGrades = true
     ),
     WORK(
         title = "Работа и проекты",
@@ -219,7 +222,8 @@ enum class AppProfile(
             "15:15" to "16:15",
             "17:00" to "18:00",
             "18:30" to "20:00"
-        )
+        ),
+        supportsGrades = true
     )
 }
 

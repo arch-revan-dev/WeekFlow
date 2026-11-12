@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -58,6 +59,7 @@ import com.weekflow.app.core.designsystem.IosBlue
 import com.weekflow.app.core.designsystem.IosOrange
 import com.weekflow.app.core.designsystem.IosRed
 import com.weekflow.app.core.designsystem.LocalIosColors
+import com.weekflow.app.core.localization.LocalAppProfile
 import com.weekflow.app.core.util.ColorParser
 import com.weekflow.app.core.util.DateTimeUtils
 import com.weekflow.app.domain.model.Activity
@@ -111,6 +113,7 @@ fun WeekTableGridView(
     onDateClick: ((LocalDate) -> Unit)? = null
 ) {
     val iosColors = LocalIosColors.current
+    val appProfile = LocalAppProfile.current
     val haptic = LocalHapticFeedback.current
     val density = LocalDensity.current
     val activityMap = remember(activities) { activities.associateBy { it.id } }
@@ -441,27 +444,64 @@ fun WeekTableGridView(
                                                     overflow = TextOverflow.Ellipsis,
                                                     modifier = Modifier.weight(1f)
                                                 )
-                                                if (slotTasksOnDate.isNotEmpty()) {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .padding(start = 2.dp)
-                                                            .clip(RoundedCornerShape(4.dp))
-                                                            .background(IosOrange)
-                                                            .padding(
-                                                                horizontal = (3.5f * scaleFactor).coerceAtLeast(2.5f).dp,
-                                                                vertical = 0.5.dp
-                                                            ),
-                                                        contentAlignment = Alignment.Center
+                                                val gradeText = if (appProfile.supportsGrades && scaleFactor >= 0.70f) {
+                                                    slot.grade?.trim()?.takeIf { it.isNotBlank() }
+                                                } else {
+                                                    null
+                                                }
+                                                if (gradeText != null || slotTasksOnDate.isNotEmpty()) {
+                                                    Row(
+                                                        modifier = Modifier.padding(start = 2.dp),
+                                                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                                        verticalAlignment = Alignment.CenterVertically
                                                     ) {
-                                                        Text(
-                                                            text = "${slotTasksOnDate.size}",
-                                                            fontSize = (8.5f * scaleFactor).coerceIn(6.5f, 11f).sp,
-                                                            lineHeight = (9.5f * scaleFactor).coerceIn(7.5f, 12f).sp,
-                                                            fontWeight = FontWeight.Bold,
-                                                            color = Color.White,
-                                                            maxLines = 1,
-                                                            softWrap = false
-                                                        )
+                                                        if (gradeText != null) {
+                                                            val gradeFontSp = (8.5f * scaleFactor).coerceIn(6.5f, 11f)
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .widthIn(max = (38f * scaleFactor).dp)
+                                                                    .clip(RoundedCornerShape(4.dp))
+                                                                    .background(IosBlue.copy(alpha = if (iosColors.isDark) 0.28f else 0.16f))
+                                                                    .padding(
+                                                                        horizontal = (3.5f * scaleFactor).coerceAtLeast(2.5f).dp,
+                                                                        vertical = 0.5.dp
+                                                                    ),
+                                                                contentAlignment = Alignment.Center
+                                                            ) {
+                                                                Text(
+                                                                    text = gradeText,
+                                                                    fontSize = gradeFontSp.sp,
+                                                                    lineHeight = (gradeFontSp + 1f).sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = IosBlue,
+                                                                    maxLines = 1,
+                                                                    softWrap = false,
+                                                                    overflow = TextOverflow.Ellipsis
+                                                                )
+                                                            }
+                                                        }
+                                                        if (slotTasksOnDate.isNotEmpty()) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .clip(RoundedCornerShape(4.dp))
+                                                                    .background(IosOrange)
+                                                                    .padding(
+                                                                        horizontal = (3.5f * scaleFactor).coerceAtLeast(2.5f).dp,
+                                                                        vertical = 0.5.dp
+                                                                    ),
+                                                                contentAlignment = Alignment.Center
+                                                            ) {
+                                                                Text(
+                                                                    text = "${slotTasksOnDate.size}",
+                                                                    fontSize = (8.5f * scaleFactor).coerceIn(6.5f, 11f).sp,
+                                                                    lineHeight = (9.5f * scaleFactor).coerceIn(7.5f, 12f).sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = Color.White,
+                                                                    maxLines = 1,
+                                                                    softWrap = false
+                                                                )
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
