@@ -2,9 +2,13 @@ package com.weekflow.app.presentation.tasks
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.weekflow.app.core.notifications.NotificationScheduler
 import com.weekflow.app.domain.model.Activity
+import com.weekflow.app.domain.model.QuickReminder
+import com.weekflow.app.domain.model.RhythmReminder
 import com.weekflow.app.domain.model.SchedulePreset
 import com.weekflow.app.domain.model.Slot
+import com.weekflow.app.domain.model.SubtaskItem
 import com.weekflow.app.domain.model.Task
 import com.weekflow.app.domain.model.TaskPriority
 import com.weekflow.app.domain.model.UserPreferences
@@ -45,7 +49,8 @@ data class TasksUiState(
 
 class TasksViewModel(
     private val scheduleRepository: ScheduleRepository,
-    private val preferencesRepository: PreferencesRepository
+    private val preferencesRepository: PreferencesRepository,
+    private val notificationScheduler: NotificationScheduler? = null
 ) : ViewModel() {
 
     private val _selectedTab = MutableStateFlow(0)
@@ -175,7 +180,7 @@ class TasksViewModel(
         )
     }.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
+        started = SharingStarted.Eagerly,
         initialValue = TasksUiState()
     )
 
@@ -299,6 +304,45 @@ class TasksViewModel(
     fun upsertTask(task: Task) {
         viewModelScope.launch {
             scheduleRepository.upsertTask(task)
+        }
+    }
+
+    fun updateTaskSubtasks(task: Task, items: List<SubtaskItem>) {
+        viewModelScope.launch {
+            scheduleRepository.upsertTask(task.copy(subtasks = items))
+        }
+    }
+
+    fun addQuickFollowUpTask(title: String, activityId: String?, presetId: String) {
+        if (title.isBlank()) return
+        viewModelScope.launch {
+            scheduleRepository.upsertTask(
+                Task(
+                    id = UUID.randomUUID().toString(),
+                    title = title.trim(),
+                    dueDateIso = LocalDate.now().plusDays(1).toString(),
+                    linkedActivityId = activityId,
+                    presetId = presetId
+                )
+            )
+        }
+    }
+
+    fun updateRhythmReminders(list: List<RhythmReminder>) {
+        viewModelScope.launch {
+            preferencesRepository.updateRhythmReminders(list)
+            try {
+                notificationScheduler?.rescheduleAllNotifications()
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun updateQuickReminders(list: List<QuickReminder>) {
+        viewModelScope.launch {
+            preferencesRepository.updateQuickReminders(list)
+            try {
+                notificationScheduler?.rescheduleAllNotifications()
+            } catch (_: Exception) {}
         }
     }
 

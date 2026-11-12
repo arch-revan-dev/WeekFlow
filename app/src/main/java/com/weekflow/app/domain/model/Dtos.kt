@@ -34,7 +34,8 @@ data class SlotDto(
     val customInstructor: String? = null,
     val customType: String? = null,
     val customNote: String? = null,
-    val periodOrder: Int = 1
+    val periodOrder: Int = 1,
+    val sessionItems: List<SubtaskItem> = emptyList()
 )
 
 @Serializable

@@ -663,7 +663,7 @@ fun TaskEditorSheet(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Чек-лист / Подзадачи",
+                        text = appProfile.sessionSectionTitle,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = iosColors.textPrimary
@@ -676,6 +676,36 @@ fun TaskEditorSheet(
                             fontWeight = FontWeight.Bold,
                             color = IosBlue
                         )
+                    }
+                }
+
+                // 1-Tap profile step templates
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(appProfile.defaultStepTemplates) { tpl ->
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(iosColors.card)
+                                .clickable {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    subtasks = subtasks + SubtaskItem(
+                                        title = tpl.title,
+                                        sets = tpl.sets,
+                                        reps = tpl.reps,
+                                        durationSeconds = tpl.durationSeconds,
+                                        restSeconds = tpl.restSeconds,
+                                        weightOrNote = tpl.weightOrNote
+                                    )
+                                }
+                                .padding(horizontal = 9.dp, vertical = 5.dp)
+                        ) {
+                            Text(
+                                text = "+ ${tpl.title}",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = IosBlue
+                            )
+                        }
                     }
                 }
 
@@ -701,13 +731,23 @@ fun TaskEditorSheet(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = sub.title,
-                            fontSize = 13.sp,
-                            color = if (sub.isDone) iosColors.textSecondary else iosColors.textPrimary,
-                            textDecoration = if (sub.isDone) TextDecoration.LineThrough else null,
-                            modifier = Modifier.weight(1f)
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = sub.title,
+                                fontSize = 13.sp,
+                                color = if (sub.isDone) iosColors.textSecondary else iosColors.textPrimary,
+                                textDecoration = if (sub.isDone) TextDecoration.LineThrough else null
+                            )
+                            val summary = sub.formatStepSummary()
+                            if (summary.isNotBlank()) {
+                                Text(
+                                    text = summary,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = IosBlue
+                                )
+                            }
+                        }
                         IconButton(
                             onClick = {
                                 subtasks = subtasks.filterNot { it.id == sub.id }

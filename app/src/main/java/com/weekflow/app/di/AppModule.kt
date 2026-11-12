@@ -30,7 +30,11 @@ val appModule = module {
             WeekFlowDatabase::class.java,
             WeekFlowDatabase.DATABASE_NAME
         )
-            .addMigrations(WeekFlowDatabase.MIGRATION_2_3, WeekFlowDatabase.MIGRATION_3_4)
+            .addMigrations(
+                WeekFlowDatabase.MIGRATION_2_3,
+                WeekFlowDatabase.MIGRATION_3_4,
+                WeekFlowDatabase.MIGRATION_4_5
+            )
             .addCallback(WeekFlowDatabase.DEFAULT_PRESET_CALLBACK)
             .fallbackToDestructiveMigration()
             .build()
@@ -66,7 +70,8 @@ val appModule = module {
             scheduleRepository = get(),
             preferencesRepository = get(),
             getDayScheduleUseCase = get(),
-            calculateWeekCycleUseCase = get()
+            calculateWeekCycleUseCase = get(),
+            notificationScheduler = get()
         )
     }
 
@@ -75,14 +80,16 @@ val appModule = module {
             scheduleRepository = get(),
             preferencesRepository = get(),
             getMonthCalendarUseCase = get(),
-            getDayScheduleUseCase = get()
+            getDayScheduleUseCase = get(),
+            notificationScheduler = get()
         )
     }
 
     viewModel {
         TasksViewModel(
             scheduleRepository = get(),
-            preferencesRepository = get()
+            preferencesRepository = get(),
+            notificationScheduler = get()
         )
     }
 

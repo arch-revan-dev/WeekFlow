@@ -140,7 +140,7 @@ object JsonImportExportManager {
                     activityTypeId = targetActId,
                     startTime = normStartTime,
                     endTime = normEndTime,
-                    periodOrder = slot.periodOrder.coerceAtLeast(1)
+                    periodOrder = slot.periodOrder.coerceAtLeast(0)
                 )
             )
         }

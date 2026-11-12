@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -76,6 +78,7 @@ import com.weekflow.app.core.designsystem.IosGreen
 import com.weekflow.app.core.designsystem.IosOrange
 import com.weekflow.app.core.designsystem.IosRed
 import com.weekflow.app.core.designsystem.LocalIosColors
+import com.weekflow.app.core.localization.LocalAppProfile
 import com.weekflow.app.core.util.ColorParser
 import com.weekflow.app.core.util.DateTimeUtils
 import com.weekflow.app.domain.model.Activity
@@ -100,10 +103,12 @@ fun TaskDetailSheet(
     onUpdateTask: (Task) -> Unit,
     onDeleteTask: () -> Unit,
     onStartFocusTimer: ((String) -> Unit)? = null,
+    onStartInteractiveSession: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val iosColors = LocalIosColors.current
+    val appProfile = LocalAppProfile.current
     val haptic = LocalHapticFeedback.current
     val context = LocalContext.current
     val today = LocalDate.now()
@@ -421,19 +426,74 @@ fun TaskDetailSheet(
                             modifier = Modifier.size(17.dp)
                         )
                         Text(
-                            text = "Чек-лист / Подзадачи",
+                            text = appProfile.sessionSectionTitle,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
                             color = iosColors.textPrimary
                         )
                     }
-                    if (totalCount > 0) {
-                        Text(
-                            text = "$doneCount из $totalCount",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (doneCount == totalCount) IosGreen else IosBlue
-                        )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (totalCount > 0) {
+                            Text(
+                                text = "$doneCount из $totalCount",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (doneCount == totalCount) IosGreen else IosBlue
+                            )
+                        }
+                        if (onStartInteractiveSession != null) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(IosBlue)
+                                    .clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        onStartInteractiveSession()
+                                    }
+                                    .padding(horizontal = 9.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = appProfile.startSessionLabel,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // 1-Tap profile step templates
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(appProfile.defaultStepTemplates) { tpl ->
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(iosColors.card)
+                                .clickable {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    val updated = task.subtasks + SubtaskItem(
+                                        title = tpl.title,
+                                        sets = tpl.sets,
+                                        reps = tpl.reps,
+                                        durationSeconds = tpl.durationSeconds,
+                                        restSeconds = tpl.restSeconds,
+                                        weightOrNote = tpl.weightOrNote
+                                    )
+                                    onUpdateTask(task.copy(subtasks = updated))
+                                }
+                                .padding(horizontal = 9.dp, vertical = 5.dp)
+                        ) {
+                            Text(
+                                text = "+ ${tpl.title}",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = IosBlue
+                            )
+                        }
                     }
                 }
 
@@ -475,14 +535,24 @@ fun TaskDetailSheet(
                                         .size(20.dp)
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
-                                Text(
-                                    text = sub.title,
-                                    fontSize = 14.sp,
-                                    lineHeight = 20.sp,
-                                    color = if (sub.isDone) iosColors.textSecondary else iosColors.textPrimary,
-                                    textDecoration = if (sub.isDone) TextDecoration.LineThrough else null,
-                                    modifier = Modifier.weight(1f)
-                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = sub.title,
+                                        fontSize = 14.sp,
+                                        lineHeight = 20.sp,
+                                        color = if (sub.isDone) iosColors.textSecondary else iosColors.textPrimary,
+                                        textDecoration = if (sub.isDone) TextDecoration.LineThrough else null
+                                    )
+                                    val summary = sub.formatStepSummary()
+                                    if (summary.isNotBlank()) {
+                                        Text(
+                                            text = summary,
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = IosBlue
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

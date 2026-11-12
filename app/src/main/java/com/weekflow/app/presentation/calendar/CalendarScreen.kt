@@ -48,6 +48,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -71,6 +72,7 @@ import com.weekflow.app.core.designsystem.IosOrange
 import com.weekflow.app.core.designsystem.IosRed
 import com.weekflow.app.core.designsystem.LocalIosColors
 import com.weekflow.app.core.designsystem.components.FocusTimerDialog
+import com.weekflow.app.core.designsystem.components.InteractiveSessionPlayerSheet
 import com.weekflow.app.core.designsystem.components.LessonSlotCard
 import com.weekflow.app.core.designsystem.components.TaskItemRow
 import com.weekflow.app.core.localization.LocalAppProfile
@@ -100,11 +102,12 @@ fun CalendarScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val iosColors = LocalIosColors.current
-    val appProfile = LocalAppProfile.current
+    val appProfile = uiState.activePreset.appProfile
     val haptic = LocalHapticFeedback.current
     var isMonthExpanded by remember { mutableStateOf(true) }
     var showPresetSheet by remember { mutableStateOf(false) }
     var focusTimerTitle by remember { mutableStateOf<String?>(null) }
+    var activeSessionSlotId by remember { mutableStateOf<String?>(null) }
 
     val presetColor = ColorParser.parseHexColor(uiState.activePreset.colorHex)
     val activityMap = remember(uiState.allActivities) {
@@ -137,6 +140,36 @@ fun CalendarScreen(
             onDismiss = { focusTimerTitle = null },
             onSessionCompleted = { mins -> viewModel.recordFocusSession(mins) }
         )
+    }
+
+    CompositionLocalProvider(LocalAppProfile provides appProfile) {
+    activeSessionSlotId?.let { slotId ->
+        val details = uiState.selectedDaySchedule?.timelineItems
+            ?.filterIsInstance<ScheduleTimelineItem.Lesson>()
+            ?.firstOrNull { it.details.slot.id == slotId }?.details
+        if (details != null) {
+            InteractiveSessionPlayerSheet(
+                sessionTitle = details.activity.name,
+                sessionSubtitle = "${details.slot.startTime} – ${details.slot.endTime}" +
+                    (details.slot.customLocation?.takeIf { it.isNotBlank() }?.let { " • $it" } ?: ""),
+                accentColor = ColorParser.parseHexColor(details.activity.colorHex),
+                initialItems = details.slot.sessionItems,
+                onUpdateItems = { updatedItems ->
+                    viewModel.updateSlotSessionItems(details.slot, updatedItems)
+                },
+                onAddFollowUpTask = { taskTitle ->
+                    viewModel.addQuickFollowUpTask(
+                        title = taskTitle,
+                        activityId = details.activity.id,
+                        presetId = uiState.activePreset.id
+                    )
+                },
+                onSessionCompleted = { mins -> viewModel.recordFocusSession(mins) },
+                onDismiss = { activeSessionSlotId = null }
+            )
+        } else {
+            activeSessionSlotId = null
+        }
     }
 
     Scaffold(
@@ -591,7 +624,8 @@ fun CalendarScreen(
                                     },
                                     onTaskToggle = { task -> viewModel.toggleTask(task) },
                                     onTaskClick = { task -> onEditTask(task) },
-                                    onStartFocusTimer = { focusTimerTitle = item.details.activity.name }
+                                    onStartFocusTimer = { focusTimerTitle = item.details.activity.name },
+                                    onStartInteractiveSession = { activeSessionSlotId = item.details.slot.id }
                                 )
                             }
                             is ScheduleTimelineItem.BreakWindow -> {
@@ -655,6 +689,7 @@ fun CalendarScreen(
                 }
             }
         }
+    }
     }
 }
 

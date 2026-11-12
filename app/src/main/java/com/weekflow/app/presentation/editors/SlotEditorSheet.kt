@@ -22,6 +22,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
@@ -62,8 +63,10 @@ import com.weekflow.app.core.designsystem.iosPrimaryButtonColors
 import com.weekflow.app.core.localization.LocalAppProfile
 import com.weekflow.app.core.util.ColorParser
 import com.weekflow.app.domain.model.Activity
+import com.weekflow.app.domain.model.AppProfile
 import com.weekflow.app.domain.model.SchedulePreset
 import com.weekflow.app.domain.model.Slot
+import com.weekflow.app.domain.model.SubtaskItem
 import com.weekflow.app.domain.model.WeekCycle
 import java.time.Duration
 import java.time.LocalTime
@@ -216,9 +219,8 @@ fun SlotEditorSheet(
 
     val initialPeriod = remember(initialSlot?.id, defaultPeriodOrder, defaultDayOfWeek, existingSlots.size, appProfile) {
         when {
-            initialSlot != null -> initialSlot.periodOrder
+            initialSlot != null -> initialSlot.periodOrder.coerceAtLeast(if (!appProfile.defaultUsePeriodNumbers) 1 else 0)
             defaultPeriodOrder != null -> defaultPeriodOrder
-            !appProfile.defaultUsePeriodNumbers -> 0
             defaultStartTime != null -> 1
             else -> {
                 val maxOnDay = existingSlots
@@ -276,6 +278,14 @@ fun SlotEditorSheet(
     var customInstructor by remember(initialSlot?.id) { mutableStateOf(initialSlot?.customInstructor ?: "") }
     var customType by remember(initialSlot?.id) { mutableStateOf(initialSlot?.customType ?: "") }
     var customNote by remember(initialSlot?.id) { mutableStateOf(initialSlot?.customNote ?: "") }
+    var sessionItems by remember(initialSlot?.id) { mutableStateOf(initialSlot?.sessionItems ?: emptyList()) }
+    var showAddStepRow by remember(initialSlot?.id) { mutableStateOf(false) }
+    var stepTitle by remember(initialSlot?.id) { mutableStateOf("") }
+    var stepSets by remember(initialSlot?.id) { mutableStateOf("3") }
+    var stepReps by remember(initialSlot?.id) { mutableStateOf("12 повт") }
+    var stepDurationSec by remember(initialSlot?.id) { mutableStateOf("") }
+    var stepRestSec by remember(initialSlot?.id) { mutableStateOf("45") }
+    var stepWeightOrNote by remember(initialSlot?.id) { mutableStateOf("") }
 
     var showDuplicatePicker by remember(initialSlot?.id) { mutableStateOf(false) }
 
@@ -491,74 +501,76 @@ fun SlotEditorSheet(
                 )
             }
 
-            // 4. Period Order (Прокрутка 1..20 или Вне уроков)
-            val itemWord = appProfile.itemTerm.split(" / ").first().lowercase()
-            val isUnnumbered = periodOrder <= 0
-            var lastNumberedPeriod by remember { mutableIntStateOf(if (initialPeriod > 0) initialPeriod else 1) }
+            // 4. Period Order (Прокрутка 1..20 или Вне уроков — ТОЛЬКО для профилей с сеткой звонков)
+            if (appProfile.defaultUsePeriodNumbers) {
+                val itemWord = appProfile.itemTerm.split(" / ").first().lowercase()
+                val isUnnumbered = periodOrder <= 0
+                var lastNumberedPeriod by remember { mutableIntStateOf(if (initialPeriod > 0) initialPeriod else 1) }
 
-            Text(
-                text = "Номер занятия",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = iosColors.textSecondary
-            )
+                Text(
+                    text = "Номер занятия",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = iosColors.textSecondary
+                )
 
-            IosSegmentedControl(
-                items = listOf("По номеру ($itemWord)", "Вне уроков (без №)"),
-                selectedIndex = if (isUnnumbered) 1 else 0,
-                onItemSelected = { idx ->
-                    if (idx == 1) {
-                        if (periodOrder > 0) lastNumberedPeriod = periodOrder
-                        periodOrder = 0
-                    } else {
-                        periodOrder = lastNumberedPeriod.coerceAtLeast(1)
+                IosSegmentedControl(
+                    items = listOf("По номеру ($itemWord)", appProfile.unnumberedLabel),
+                    selectedIndex = if (isUnnumbered) 1 else 0,
+                    onItemSelected = { idx ->
+                        if (idx == 1) {
+                            if (periodOrder > 0) lastNumberedPeriod = periodOrder
+                            periodOrder = 0
+                        } else {
+                            periodOrder = lastNumberedPeriod.coerceAtLeast(1)
+                        }
                     }
-                }
-            )
+                )
 
-            AnimatedVisibility(visible = !isUnnumbered) {
-                val periodChoices = remember { (1..20).toList() }
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(iosColors.cardSecondary.copy(alpha = 0.6f))
-                        .padding(horizontal = 16.dp, vertical = 6.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    IosWheelPicker(
-                        items = periodChoices,
-                        selectedIndex = (periodOrder - 1).coerceIn(0, periodChoices.lastIndex),
-                        onItemSelected = { _, num ->
-                            periodOrder = num
-                            lastNumberedPeriod = num
-                            periodOrderText = num.toString()
-                            val resolved = resolveLessonTimesForPeriod(
-                                targetPeriod = num,
-                                targetDayOfWeek = dayOfWeek,
-                                existingSlots = existingSlots,
-                                fallbackPresets = timePresets,
-                                defaultDurationMin = appProfile.defaultDurationMinutes,
-                                defaultBreakMin = appProfile.defaultBreakMinutes
-                            )
-                            startTime = resolved.first
-                            endTime = resolved.second
-                        },
-                        itemLabel = { num ->
-                            val (s, e) = resolveLessonTimesForPeriod(
-                                targetPeriod = num,
-                                targetDayOfWeek = dayOfWeek,
-                                existingSlots = existingSlots,
-                                fallbackPresets = timePresets,
-                                defaultDurationMin = appProfile.defaultDurationMinutes,
-                                defaultBreakMin = appProfile.defaultBreakMinutes
-                            )
-                            "$num $itemWord  •  $s – $e"
-                        },
-                        visibleItemsCount = 3,
-                        itemHeight = 38.dp,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                AnimatedVisibility(visible = !isUnnumbered) {
+                    val periodChoices = remember { (1..20).toList() }
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(iosColors.cardSecondary.copy(alpha = 0.6f))
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        IosWheelPicker(
+                            items = periodChoices,
+                            selectedIndex = (periodOrder - 1).coerceIn(0, periodChoices.lastIndex),
+                            onItemSelected = { _, num ->
+                                periodOrder = num
+                                lastNumberedPeriod = num
+                                periodOrderText = num.toString()
+                                val resolved = resolveLessonTimesForPeriod(
+                                    targetPeriod = num,
+                                    targetDayOfWeek = dayOfWeek,
+                                    existingSlots = existingSlots,
+                                    fallbackPresets = timePresets,
+                                    defaultDurationMin = appProfile.defaultDurationMinutes,
+                                    defaultBreakMin = appProfile.defaultBreakMinutes
+                                )
+                                startTime = resolved.first
+                                endTime = resolved.second
+                            },
+                            itemLabel = { num ->
+                                val (s, e) = resolveLessonTimesForPeriod(
+                                    targetPeriod = num,
+                                    targetDayOfWeek = dayOfWeek,
+                                    existingSlots = existingSlots,
+                                    fallbackPresets = timePresets,
+                                    defaultDurationMin = appProfile.defaultDurationMinutes,
+                                    defaultBreakMin = appProfile.defaultBreakMinutes
+                                )
+                                "$num $itemWord  •  $s – $e"
+                            },
+                            visibleItemsCount = 3,
+                            itemHeight = 38.dp,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 }
             }
 
@@ -645,6 +657,227 @@ fun SlotEditorSheet(
                 }
             }
 
+            // 7. Interactive Profile Program / Exercises / Agenda / Practice Steps
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(iosColors.cardSecondary.copy(alpha = 0.7f))
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = appProfile.sessionSectionTitle,
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = iosColors.textPrimary
+                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(IosBlue.copy(alpha = 0.15f))
+                            .clickable {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                showAddStepRow = !showAddStepRow
+                            }
+                            .padding(horizontal = 9.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = if (showAddStepRow) "Скрыть" else "+ ${appProfile.sessionItemTerm}",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = IosBlue
+                        )
+                    }
+                }
+
+                // 1-Tap profile templates
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(appProfile.defaultStepTemplates) { tpl ->
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(iosColors.card)
+                                .clickable {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    sessionItems = sessionItems + SubtaskItem(
+                                        title = tpl.title,
+                                        sets = tpl.sets,
+                                        reps = tpl.reps,
+                                        durationSeconds = tpl.durationSeconds,
+                                        restSeconds = tpl.restSeconds,
+                                        weightOrNote = tpl.weightOrNote
+                                    )
+                                }
+                                .padding(horizontal = 9.dp, vertical = 5.dp)
+                        ) {
+                            Text(
+                                text = "+ ${tpl.title}",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = IosBlue
+                            )
+                        }
+                    }
+                }
+
+                // Custom Exercise / Step Form
+                AnimatedVisibility(visible = showAddStepRow) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(iosColors.card)
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = stepTitle,
+                            onValueChange = { stepTitle = it },
+                            label = { Text(appProfile.sessionItemTerm) },
+                            placeholder = { Text(appProfile.stepPlaceholder) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = stepSets,
+                                onValueChange = { stepSets = it.filter { ch -> ch.isDigit() } },
+                                label = { Text(if (appProfile == AppProfile.HEALTH) "Подходы" else "Серии") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.weight(1f)
+                            )
+                            OutlinedTextField(
+                                value = stepReps,
+                                onValueChange = { stepReps = it },
+                                label = { Text(if (appProfile == AppProfile.HEALTH) "Повторы" else "Объём") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = stepDurationSec,
+                                onValueChange = { stepDurationSec = it.filter { ch -> ch.isDigit() } },
+                                label = { Text("Таймер (сек)") },
+                                placeholder = { Text("60") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.weight(1f)
+                            )
+                            OutlinedTextField(
+                                value = stepRestSec,
+                                onValueChange = { stepRestSec = it.filter { ch -> ch.isDigit() } },
+                                label = { Text("Отдых (сек)") },
+                                placeholder = { Text("45") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = stepWeightOrNote,
+                                onValueChange = { stepWeightOrNote = it },
+                                label = { Text(appProfile.weightOrNoteLabel) },
+                                placeholder = { Text(appProfile.weightOrNotePlaceholder) },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Button(
+                                onClick = {
+                                    if (stepTitle.isNotBlank()) {
+                                        sessionItems = sessionItems + SubtaskItem(
+                                            title = stepTitle.trim(),
+                                            sets = stepSets.toIntOrNull()?.takeIf { it > 0 },
+                                            reps = stepReps.trim().takeIf { it.isNotBlank() },
+                                            durationSeconds = stepDurationSec.toIntOrNull()?.takeIf { it > 0 },
+                                            restSeconds = stepRestSec.toIntOrNull()?.takeIf { it > 0 },
+                                            weightOrNote = stepWeightOrNote.trim().takeIf { it.isNotBlank() }
+                                        )
+                                        stepTitle = ""
+                                        stepWeightOrNote = ""
+                                        showAddStepRow = false
+                                    }
+                                },
+                                enabled = stepTitle.isNotBlank(),
+                                colors = iosPrimaryButtonColors(IosBlue),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Text("Добавить", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
+                // Added steps list
+                if (sessionItems.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        sessionItems.forEach { item ->
+                            val summary = item.formatStepSummary()
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(iosColors.card)
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = item.title,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = iosColors.textPrimary
+                                    )
+                                    if (summary.isNotBlank()) {
+                                        Text(
+                                            text = summary,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = IosBlue
+                                        )
+                                    }
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .size(26.dp)
+                                        .clip(CircleShape)
+                                        .clickable {
+                                            sessionItems = sessionItems.filterNot { it.id == item.id }
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Close,
+                                        contentDescription = "Удалить",
+                                        tint = iosColors.textSecondary,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(4.dp))
 
             // Duplicate to another day section
@@ -691,8 +924,9 @@ fun SlotEditorSheet(
                                                 customInstructor = customInstructor.trim().takeIf { it.isNotBlank() },
                                                 customType = customType.trim().takeIf { it.isNotBlank() },
                                                 customNote = customNote.trim().takeIf { it.isNotBlank() },
-                                                periodOrder = periodOrder,
-                                                presetId = initialSlot.presetId.ifBlank { presetId }
+                                                periodOrder = if (appProfile.defaultUsePeriodNumbers) periodOrder else periodOrder.coerceAtLeast(1),
+                                                presetId = initialSlot.presetId.ifBlank { presetId },
+                                                sessionItems = sessionItems
                                             )
                                             if (onDuplicateSlot != null) {
                                                 onDuplicateSlot(duplicated, day)
@@ -744,8 +978,9 @@ fun SlotEditorSheet(
                             customInstructor = customInstructor.trim().takeIf { it.isNotBlank() },
                             customType = customType.trim().takeIf { it.isNotBlank() },
                             customNote = customNote.trim().takeIf { it.isNotBlank() },
-                            periodOrder = periodOrder,
-                            presetId = initialSlot?.presetId?.ifBlank { presetId } ?: presetId
+                            periodOrder = if (appProfile.defaultUsePeriodNumbers) periodOrder else periodOrder.coerceAtLeast(1),
+                            presetId = initialSlot?.presetId?.ifBlank { presetId } ?: presetId,
+                            sessionItems = sessionItems
                         )
                         onSave(slot)
                         onDismiss()

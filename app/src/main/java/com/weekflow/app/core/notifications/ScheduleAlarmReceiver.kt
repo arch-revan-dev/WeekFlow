@@ -25,6 +25,8 @@ class ScheduleAlarmReceiver : BroadcastReceiver(), KoinComponent {
         const val ALARM_TYPE_LESSON = 1
         const val ALARM_TYPE_EVENING_SUMMARY = 2
         const val ALARM_TYPE_TASK_DEADLINES = 3
+        const val ALARM_TYPE_RHYTHM_REMINDER = 4
+        const val ALARM_TYPE_QUICK_REMINDER = 5
 
         const val EXTRA_NOTIFICATION_ID = "extra_notification_id"
         const val EXTRA_TITLE = "extra_title"
@@ -121,6 +123,12 @@ class ScheduleAlarmReceiver : BroadcastReceiver(), KoinComponent {
                                 notificationHelper.showTaskDeadlinesNotification(title, message)
                             }
                         }
+                    }
+
+                    ALARM_TYPE_RHYTHM_REMINDER, ALARM_TYPE_QUICK_REMINDER -> {
+                        val title = intent.getStringExtra(EXTRA_TITLE) ?: "🔔 Напоминание"
+                        val message = intent.getStringExtra(EXTRA_MESSAGE) ?: "Пора сделать паузу!"
+                        notificationHelper.showTaskDeadlinesNotification(title, message)
                     }
                 }
 

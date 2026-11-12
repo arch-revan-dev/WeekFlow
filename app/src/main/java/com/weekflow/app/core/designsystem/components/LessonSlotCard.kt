@@ -23,6 +23,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.HourglassTop
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
@@ -46,9 +47,11 @@ import androidx.compose.ui.unit.sp
 import com.weekflow.app.core.designsystem.LocalIosColors
 import com.weekflow.app.core.localization.LocalAppProfile
 import com.weekflow.app.core.util.ColorParser
+import com.weekflow.app.domain.model.AppProfile
 import com.weekflow.app.domain.model.CardDensity
 import com.weekflow.app.domain.model.ScheduleCardStyle
 import com.weekflow.app.domain.model.SlotWithDetails
+import com.weekflow.app.domain.model.SubtaskItem
 import com.weekflow.app.domain.model.Task
 import com.weekflow.app.domain.model.WeekCycle
 import java.time.Duration
@@ -68,7 +71,8 @@ fun LessonSlotCard(
     showProgressBar: Boolean = true,
     isTwoWeekCycleEnabled: Boolean = false,
     isToday: Boolean = false,
-    onStartFocusTimer: (() -> Unit)? = null
+    onStartFocusTimer: (() -> Unit)? = null,
+    onStartInteractiveSession: (() -> Unit)? = null
 ) {
     val iosColors = LocalIosColors.current
     val appProfile = LocalAppProfile.current
@@ -137,10 +141,21 @@ fun LessonSlotCard(
         }
     }
 
-    val itemLabel = if (details.slot.periodOrder > 0) {
-        "${details.slot.periodOrder} ${appProfile.itemTerm.split(" / ").first().lowercase()}"
+    val durationMins = Duration.between(startTime, endTime).toMinutes().coerceAtLeast(1)
+    val durationBadge = if (durationMins >= 60 && durationMins % 60L == 0L) {
+        "${durationMins / 60} ч"
+    } else if (durationMins >= 90) {
+        "${durationMins / 60}ч ${durationMins % 60}м"
     } else {
-        "Вне уроков"
+        "$durationMins мин"
+    }
+
+    val itemLabel = if (!appProfile.defaultUsePeriodNumbers) {
+        durationBadge
+    } else if (details.slot.periodOrder > 0) {
+        "${details.slot.periodOrder} ${appProfile.shortItemBadge}"
+    } else {
+        "Без №"
     }
 
     Box(
@@ -217,7 +232,9 @@ fun LessonSlotCard(
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = activityColor,
-                                maxLines = 1
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Clip
                             )
                         }
                     }
@@ -247,7 +264,9 @@ fun LessonSlotCard(
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Medium,
                                     color = iosColors.textSecondary,
-                                    maxLines = 1
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Clip
                                 )
                             }
                             Spacer(modifier = Modifier.width(10.dp))
@@ -288,7 +307,9 @@ fun LessonSlotCard(
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = activityColor,
-                                    maxLines = 1
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Clip
                                 )
                             }
                         }
@@ -406,12 +427,53 @@ fun LessonSlotCard(
                     }
                 }
 
-                // Top right actions: Focus timer + Add Task button
+                // Top right actions: Interactive Session / Focus timer + Add Task button
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    if (onStartFocusTimer != null) {
+                    if (onStartInteractiveSession != null) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(activityColor.copy(alpha = if (isDark) 0.22f else 0.14f))
+                                .border(
+                                    width = 0.8.dp,
+                                    color = activityColor.copy(alpha = if (isDark) 0.40f else 0.26f),
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                                .clickable {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    onStartInteractiveSession()
+                                }
+                                .padding(horizontal = 7.dp, vertical = 5.5.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.PlayArrow,
+                                    contentDescription = appProfile.startSessionLabel,
+                                    tint = activityColor,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                if (details.slot.sessionItems.isNotEmpty() || appProfile == AppProfile.HEALTH) {
+                                    Text(
+                                        text = if (details.slot.sessionItems.isNotEmpty()) {
+                                            "${details.slot.sessionItems.count { it.isDone }}/${details.slot.sessionItems.size}"
+                                        } else {
+                                            "Старт"
+                                        },
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = activityColor
+                                    )
+                                }
+                            }
+                        }
+                    } else if (onStartFocusTimer != null) {
                         Box(
                             modifier = Modifier
                                 .clip(CircleShape)
@@ -464,10 +526,88 @@ fun LessonSlotCard(
                                 modifier = Modifier.size(14.dp)
                             )
                             Text(
-                                text = "Задача",
+                                text = if (appProfile == AppProfile.HEALTH) "Цель" else "Задача",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = activityColor
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Interactive Session Items (Exercises / Agenda / Practice steps) inside card
+            if (details.slot.sessionItems.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(activityColor.copy(alpha = if (isDark) 0.12f else 0.07f))
+                        .border(
+                            width = 0.8.dp,
+                            color = activityColor.copy(alpha = if (isDark) 0.28f else 0.18f),
+                            shape = RoundedCornerShape(10.dp)
+                        )
+                        .clickable {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onStartInteractiveSession?.invoke() ?: onCardClick()
+                        }
+                        .padding(horizontal = 10.dp, vertical = 8.dp)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = appProfile.sessionSectionTitle,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = activityColor
+                            )
+                            Text(
+                                text = appProfile.startSessionLabel,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = activityColor
+                            )
+                        }
+                        details.slot.sessionItems.take(4).forEach { step ->
+                            val summary = step.formatStepSummary()
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = (if (step.isDone) "✓ " else "• ") + step.title,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (step.isDone) iosColors.textSecondary else iosColors.textPrimary,
+                                    textDecoration = if (step.isDone) TextDecoration.LineThrough else TextDecoration.None,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (summary.isNotBlank()) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = summary,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = activityColor,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                        }
+                        if (details.slot.sessionItems.size > 4) {
+                            Text(
+                                text = "+ ещё ${details.slot.sessionItems.size - 4}...",
+                                fontSize = 11.sp,
+                                color = iosColors.textSecondary
                             )
                         }
                     }

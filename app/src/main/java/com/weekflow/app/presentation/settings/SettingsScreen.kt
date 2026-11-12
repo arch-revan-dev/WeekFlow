@@ -88,6 +88,7 @@ import com.weekflow.app.core.designsystem.IosGreen
 import com.weekflow.app.core.designsystem.IosOrange
 import com.weekflow.app.core.designsystem.IosPurple
 import com.weekflow.app.core.designsystem.IosRed
+import com.weekflow.app.core.designsystem.components.RhythmAndRemindersSheet
 import com.weekflow.app.core.designsystem.LocalIosColors
 import com.weekflow.app.core.designsystem.components.IosCalendarDatePickerDialog
 import com.weekflow.app.core.designsystem.components.IosDatePickerButton
@@ -135,6 +136,17 @@ fun SettingsScreen(
     var showEveningTimeDialog by remember { mutableStateOf(false) }
     var showMorningTaskTimeDialog by remember { mutableStateOf(false) }
     var showPresetSheet by remember { mutableStateOf(false) }
+    var showRhythmSheet by remember { mutableStateOf(false) }
+
+    if (showRhythmSheet) {
+        RhythmAndRemindersSheet(
+            rhythmReminders = uiState.preferences.rhythmReminders,
+            quickReminders = uiState.preferences.quickReminders,
+            onUpdateRhythmReminders = { viewModel.updateRhythmReminders(it) },
+            onUpdateQuickReminders = { viewModel.updateQuickReminders(it) },
+            onDismiss = { showRhythmSheet = false }
+        )
+    }
 
     if (showPresetSheet) {
         PresetManagerSheet(
@@ -558,6 +570,17 @@ fun SettingsScreen(
                                 onClick = { showMorningTaskTimeDialog = true }
                             )
                         }
+
+                        SettingsDivider()
+                        val enabledRhythmCount = uiState.preferences.rhythmReminders.count { it.isEnabled }
+                        val quickCount = uiState.preferences.quickReminders.size
+                        SettingsButtonRow(
+                            icon = Icons.Rounded.Notifications,
+                            label = "Интервальные и быстрые",
+                            sublabel = "Вода, разминка, осанка • $enabledRhythmCount интерв., $quickCount быстр.",
+                            iconTint = IosOrange,
+                            onClick = { showRhythmSheet = true }
+                        )
                     }
                 }
             }

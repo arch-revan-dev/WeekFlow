@@ -2,12 +2,16 @@ package com.weekflow.app.presentation.schedule
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.weekflow.app.core.notifications.NotificationScheduler
 import com.weekflow.app.domain.model.Activity
 import com.weekflow.app.domain.model.CalendarEvent
 import com.weekflow.app.domain.model.DayScheduleUiModel
+import com.weekflow.app.domain.model.QuickReminder
+import com.weekflow.app.domain.model.RhythmReminder
 import com.weekflow.app.domain.model.SchedulePreset
 import com.weekflow.app.domain.model.ScheduleViewMode
 import com.weekflow.app.domain.model.Slot
+import com.weekflow.app.domain.model.SubtaskItem
 import com.weekflow.app.domain.model.Task
 import com.weekflow.app.domain.model.UserPreferences
 import com.weekflow.app.domain.model.Vacation
@@ -30,6 +34,7 @@ import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.temporal.TemporalAdjusters
+import java.util.UUID
 
 data class ScheduleUiState(
     val selectedDate: LocalDate = LocalDate.now(),
@@ -58,11 +63,11 @@ class ScheduleViewModel(
     private val scheduleRepository: ScheduleRepository,
     private val preferencesRepository: PreferencesRepository,
     private val getDayScheduleUseCase: GetDayScheduleUseCase,
-    private val calculateWeekCycleUseCase: CalculateWeekCycleUseCase
+    private val calculateWeekCycleUseCase: CalculateWeekCycleUseCase,
+    private val notificationScheduler: NotificationScheduler? = null
 ) : ViewModel() {
 
     private val _selectedDate = MutableStateFlow(LocalDate.now())
-    private val _manualOverridePresetId = MutableStateFlow<String?>(null)
 
     // 15-second live ticker for real-time lesson progress and countdowns
     private val timeTicker = flow {
@@ -74,7 +79,6 @@ class ScheduleViewModel(
 
     val uiState: StateFlow<ScheduleUiState> = combine(
         _selectedDate,
-        _manualOverridePresetId,
         timeTicker,
         preferencesRepository.userPreferences,
         scheduleRepository.getAllPresets(),
@@ -85,27 +89,25 @@ class ScheduleViewModel(
         scheduleRepository.getAllVacations()
     ) { params ->
         val selectedDate = params[0] as LocalDate
-        val manualOverrideId = params[1] as String?
-        val currentTime = params[2] as LocalTime
-        val preferences = params[3] as UserPreferences
+        val currentTime = params[1] as LocalTime
+        val preferences = params[2] as UserPreferences
         @Suppress("UNCHECKED_CAST")
-        val presets = params[4] as List<SchedulePreset>
+        val presets = params[3] as List<SchedulePreset>
         @Suppress("UNCHECKED_CAST")
-        val rawActivities = params[5] as List<Activity>
+        val rawActivities = params[4] as List<Activity>
         @Suppress("UNCHECKED_CAST")
-        val rawSlots = params[6] as List<Slot>
+        val rawSlots = params[5] as List<Slot>
         @Suppress("UNCHECKED_CAST")
-        val rawEvents = params[7] as List<CalendarEvent>
+        val rawEvents = params[6] as List<CalendarEvent>
         @Suppress("UNCHECKED_CAST")
-        val rawTasks = params[8] as List<Task>
+        val rawTasks = params[7] as List<Task>
         @Suppress("UNCHECKED_CAST")
-        val vacations = params[9] as List<Vacation>
+        val vacations = params[8] as List<Vacation>
 
         val (effectivePreset, dateScheduledPreset) = SchedulePreset.resolveForDate(
             date = selectedDate,
             presets = presets,
-            activePresetId = preferences.activePresetId,
-            manualOverridePresetId = manualOverrideId
+            activePresetId = preferences.activePresetId
         )
 
         val activities = rawActivities.filter { it.presetId == effectivePreset.id }
@@ -180,7 +182,7 @@ class ScheduleViewModel(
         )
     }.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
+        started = SharingStarted.Eagerly,
         initialValue = ScheduleUiState()
     )
 
@@ -191,14 +193,16 @@ class ScheduleViewModel(
     }
 
     fun selectPreset(preset: SchedulePreset) {
-        _manualOverridePresetId.value = preset.id
         viewModelScope.launch {
             preferencesRepository.updateActivePresetId(preset.id)
         }
     }
 
     fun applyDateScheduledPreset() {
-        _manualOverridePresetId.value = null
+        val scheduled = uiState.value.dateScheduledPreset ?: return
+        viewModelScope.launch {
+            preferencesRepository.updateActivePresetId(scheduled.id)
+        }
     }
 
     fun savePreset(preset: SchedulePreset) {
@@ -210,7 +214,6 @@ class ScheduleViewModel(
     fun duplicatePreset(sourcePresetId: String, newPreset: SchedulePreset) {
         viewModelScope.launch {
             scheduleRepository.duplicatePreset(sourcePresetId, newPreset)
-            _manualOverridePresetId.value = newPreset.id
             preferencesRepository.updateActivePresetId(newPreset.id)
         }
     }
@@ -220,7 +223,6 @@ class ScheduleViewModel(
         viewModelScope.launch {
             scheduleRepository.deletePreset(presetId)
             if (uiState.value.activePreset.id == presetId) {
-                _manualOverridePresetId.value = SchedulePreset.DEFAULT_ID
                 preferencesRepository.updateActivePresetId(SchedulePreset.DEFAULT_ID)
             }
         }
@@ -376,6 +378,51 @@ class ScheduleViewModel(
                     endTime = newEndTime
                 )
             )
+        }
+    }
+
+    fun updateSlotSessionItems(slot: Slot, items: List<SubtaskItem>) {
+        viewModelScope.launch {
+            scheduleRepository.upsertSlot(slot.copy(sessionItems = items))
+        }
+    }
+
+    fun updateTaskSubtasks(task: Task, items: List<SubtaskItem>) {
+        viewModelScope.launch {
+            scheduleRepository.upsertTask(task.copy(subtasks = items))
+        }
+    }
+
+    fun addQuickFollowUpTask(title: String, activityId: String?, presetId: String) {
+        if (title.isBlank()) return
+        viewModelScope.launch {
+            scheduleRepository.upsertTask(
+                Task(
+                    id = UUID.randomUUID().toString(),
+                    title = title.trim(),
+                    dueDateIso = uiState.value.selectedDate.plusDays(1).toString(),
+                    linkedActivityId = activityId,
+                    presetId = presetId
+                )
+            )
+        }
+    }
+
+    fun updateRhythmReminders(list: List<RhythmReminder>) {
+        viewModelScope.launch {
+            preferencesRepository.updateRhythmReminders(list)
+            try {
+                notificationScheduler?.rescheduleAllNotifications()
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun updateQuickReminders(list: List<QuickReminder>) {
+        viewModelScope.launch {
+            preferencesRepository.updateQuickReminders(list)
+            try {
+                notificationScheduler?.rescheduleAllNotifications()
+            } catch (_: Exception) {}
         }
     }
 }

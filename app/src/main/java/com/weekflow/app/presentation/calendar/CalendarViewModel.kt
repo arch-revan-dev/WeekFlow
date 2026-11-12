@@ -2,11 +2,15 @@ package com.weekflow.app.presentation.calendar
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.weekflow.app.core.notifications.NotificationScheduler
 import com.weekflow.app.domain.model.Activity
 import com.weekflow.app.domain.model.CalendarEvent
 import com.weekflow.app.domain.model.DayScheduleUiModel
+import com.weekflow.app.domain.model.QuickReminder
+import com.weekflow.app.domain.model.RhythmReminder
 import com.weekflow.app.domain.model.SchedulePreset
 import com.weekflow.app.domain.model.Slot
+import com.weekflow.app.domain.model.SubtaskItem
 import com.weekflow.app.domain.model.Task
 import com.weekflow.app.domain.model.UserPreferences
 import com.weekflow.app.domain.model.Vacation
@@ -23,6 +27,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
+import java.util.UUID
 
 data class CalendarUiState(
     val currentYearMonth: YearMonth = YearMonth.now(),
@@ -42,7 +47,8 @@ class CalendarViewModel(
     private val scheduleRepository: ScheduleRepository,
     private val preferencesRepository: PreferencesRepository,
     private val getMonthCalendarUseCase: GetMonthCalendarUseCase,
-    private val getDayScheduleUseCase: GetDayScheduleUseCase
+    private val getDayScheduleUseCase: GetDayScheduleUseCase,
+    private val notificationScheduler: NotificationScheduler? = null
 ) : ViewModel() {
 
     private val _currentYearMonth = MutableStateFlow(YearMonth.now())
@@ -126,7 +132,7 @@ class CalendarViewModel(
         )
     }.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
+        started = SharingStarted.Eagerly,
         initialValue = CalendarUiState()
     )
 
@@ -223,6 +229,51 @@ class CalendarViewModel(
     fun deleteEvent(eventId: String) {
         viewModelScope.launch {
             scheduleRepository.deleteEvent(eventId)
+        }
+    }
+
+    fun updateSlotSessionItems(slot: Slot, items: List<SubtaskItem>) {
+        viewModelScope.launch {
+            scheduleRepository.upsertSlot(slot.copy(sessionItems = items))
+        }
+    }
+
+    fun updateTaskSubtasks(task: Task, items: List<SubtaskItem>) {
+        viewModelScope.launch {
+            scheduleRepository.upsertTask(task.copy(subtasks = items))
+        }
+    }
+
+    fun addQuickFollowUpTask(title: String, activityId: String?, presetId: String) {
+        if (title.isBlank()) return
+        viewModelScope.launch {
+            scheduleRepository.upsertTask(
+                Task(
+                    id = UUID.randomUUID().toString(),
+                    title = title.trim(),
+                    dueDateIso = uiState.value.selectedDate.plusDays(1).toString(),
+                    linkedActivityId = activityId,
+                    presetId = presetId
+                )
+            )
+        }
+    }
+
+    fun updateRhythmReminders(list: List<RhythmReminder>) {
+        viewModelScope.launch {
+            preferencesRepository.updateRhythmReminders(list)
+            try {
+                notificationScheduler?.rescheduleAllNotifications()
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun updateQuickReminders(list: List<QuickReminder>) {
+        viewModelScope.launch {
+            preferencesRepository.updateQuickReminders(list)
+            try {
+                notificationScheduler?.rescheduleAllNotifications()
+            } catch (_: Exception) {}
         }
     }
 }

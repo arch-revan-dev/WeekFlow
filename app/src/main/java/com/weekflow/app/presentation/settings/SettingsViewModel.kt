@@ -14,6 +14,8 @@ import com.weekflow.app.domain.model.AppProfile
 import com.weekflow.app.domain.model.AppThemeMode
 import com.weekflow.app.domain.model.CardDensity
 import com.weekflow.app.domain.model.CleanSchedulePayload
+import com.weekflow.app.domain.model.QuickReminder
+import com.weekflow.app.domain.model.RhythmReminder
 import com.weekflow.app.domain.model.ScheduleCardStyle
 import com.weekflow.app.domain.model.SchedulePreset
 import com.weekflow.app.domain.model.Slot
@@ -126,7 +128,7 @@ class SettingsViewModel(
         )
     }.stateIn(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
+        started = SharingStarted.Eagerly,
         initialValue = SettingsUiState()
     )
 
@@ -245,7 +247,7 @@ class SettingsViewModel(
         val clip = ClipData.newPlainText("WeekFlow AI Prompt", AiPromptBuilder.buildSystemPrompt(uiState.value.activePreset))
         clipboard.setPrimaryClip(clip)
         viewModelScope.launch {
-            _uiEffect.emit(SettingsUiEffect.ShowToast("Системный промпт v4.2 скопирован в буфер обмена!"))
+            _uiEffect.emit(SettingsUiEffect.ShowToast("Системный промпт v4.3 скопирован в буфер обмена!"))
         }
     }
 
@@ -396,6 +398,20 @@ class SettingsViewModel(
     fun onTaskRemindersTimeChanged(time: String) {
         viewModelScope.launch {
             preferencesRepository.updateTaskRemindersTime(time)
+            rescheduleNotifications()
+        }
+    }
+
+    fun updateRhythmReminders(list: List<RhythmReminder>) {
+        viewModelScope.launch {
+            preferencesRepository.updateRhythmReminders(list)
+            rescheduleNotifications()
+        }
+    }
+
+    fun updateQuickReminders(list: List<QuickReminder>) {
+        viewModelScope.launch {
+            preferencesRepository.updateQuickReminders(list)
             rescheduleNotifications()
         }
     }

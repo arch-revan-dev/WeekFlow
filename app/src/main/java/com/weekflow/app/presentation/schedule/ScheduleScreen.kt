@@ -34,6 +34,7 @@ import androidx.compose.material.icons.rounded.BeachAccess
 import androidx.compose.material.icons.rounded.Celebration
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.MoreTime
+import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.QueryStats
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
@@ -45,6 +46,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -68,9 +70,11 @@ import com.weekflow.app.core.designsystem.IosOrange
 import com.weekflow.app.core.designsystem.IosRed
 import com.weekflow.app.core.designsystem.LocalIosColors
 import com.weekflow.app.core.designsystem.components.FocusTimerDialog
+import com.weekflow.app.core.designsystem.components.InteractiveSessionPlayerSheet
 import com.weekflow.app.core.designsystem.components.IosSegmentedControl
 import com.weekflow.app.core.designsystem.components.LessonSlotCard
 import com.weekflow.app.core.designsystem.components.LiveLessonBanner
+import com.weekflow.app.core.designsystem.components.RhythmAndRemindersSheet
 import com.weekflow.app.core.designsystem.components.TaskItemRow
 import com.weekflow.app.core.designsystem.components.UndoIncidentBanner
 import com.weekflow.app.core.designsystem.components.WeekStripHeader
@@ -80,6 +84,7 @@ import com.weekflow.app.core.util.DateTimeUtils
 import com.weekflow.app.domain.model.CalendarEvent
 import com.weekflow.app.domain.model.ScheduleTimelineItem
 import com.weekflow.app.domain.model.ScheduleViewMode
+import com.weekflow.app.domain.model.SlotWithDetails
 import com.weekflow.app.domain.model.Task
 import com.weekflow.app.domain.model.WeekCycle
 import com.weekflow.app.presentation.editors.PresetManagerSheet
@@ -105,14 +110,17 @@ fun ScheduleScreen(
     val uiState by viewModel.uiState.collectAsState()
     val undoSnapshot by viewModel.lastUndoSnapshot.collectAsState()
     val iosColors = LocalIosColors.current
-    val appProfile = LocalAppProfile.current
+    val appProfile = uiState.activePreset.appProfile
     val haptic = LocalHapticFeedback.current
 
     var focusTimerTitle by remember { mutableStateOf<String?>(null) }
     var focusTimerMinutes by remember { mutableIntStateOf(25) }
     var showPresetSheet by remember { mutableStateOf(false) }
     var showInsightsSheet by remember { mutableStateOf(false) }
+    var showRhythmSheet by remember { mutableStateOf(false) }
+    var activeSessionSlotId by remember { mutableStateOf<String?>(null) }
 
+    CompositionLocalProvider(LocalAppProfile provides appProfile) {
     if (focusTimerTitle != null) {
         FocusTimerDialog(
             initialTitle = focusTimerTitle!!,
@@ -120,6 +128,44 @@ fun ScheduleScreen(
             onDismiss = { focusTimerTitle = null },
             onSessionCompleted = { mins -> viewModel.recordFocusSession(mins) }
         )
+    }
+
+    if (showRhythmSheet) {
+        RhythmAndRemindersSheet(
+            rhythmReminders = uiState.preferences.rhythmReminders,
+            quickReminders = uiState.preferences.quickReminders,
+            onUpdateRhythmReminders = { viewModel.updateRhythmReminders(it) },
+            onUpdateQuickReminders = { viewModel.updateQuickReminders(it) },
+            onDismiss = { showRhythmSheet = false }
+        )
+    }
+
+    activeSessionSlotId?.let { slotId ->
+        val liveSlot = uiState.allSlots.firstOrNull { it.id == slotId }
+        if (liveSlot != null) {
+            val act = uiState.allActivities.firstOrNull { it.id == liveSlot.activityTypeId }
+            InteractiveSessionPlayerSheet(
+                sessionTitle = act?.name ?: "Занятие",
+                sessionSubtitle = "${liveSlot.startTime} – ${liveSlot.endTime}" +
+                    (liveSlot.customLocation?.takeIf { it.isNotBlank() }?.let { " • $it" } ?: ""),
+                accentColor = ColorParser.parseHexColor(act?.colorHex ?: uiState.activePreset.colorHex),
+                initialItems = liveSlot.sessionItems,
+                onUpdateItems = { updatedItems ->
+                    viewModel.updateSlotSessionItems(liveSlot, updatedItems)
+                },
+                onAddFollowUpTask = { taskTitle ->
+                    viewModel.addQuickFollowUpTask(
+                        title = taskTitle,
+                        activityId = liveSlot.activityTypeId,
+                        presetId = uiState.activePreset.id
+                    )
+                },
+                onSessionCompleted = { mins -> viewModel.recordFocusSession(mins) },
+                onDismiss = { activeSessionSlotId = null }
+            )
+        } else {
+            activeSessionSlotId = null
+        }
     }
 
     if (showPresetSheet) {
@@ -229,7 +275,9 @@ fun ScheduleScreen(
                                 fontSize = 11.5.sp,
                                 fontWeight = FontWeight.Medium,
                                 color = if (isCurrentWeek) iosColors.textSecondary else IosBlue,
-                                maxLines = 1
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
                             )
 
                             if (!uiState.isToday) {
@@ -247,7 +295,9 @@ fun ScheduleScreen(
                                         text = "Сегодня",
                                         fontSize = 10.5.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = IosBlue
+                                        color = IosBlue,
+                                        maxLines = 1,
+                                        softWrap = false
                                     )
                                 }
                             }
@@ -306,6 +356,25 @@ fun ScheduleScreen(
                             contentDescription = "Следующая неделя",
                             tint = IosBlue
                         )
+                    }
+
+                    IconButton(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            showRhythmSheet = true
+                        },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        val hasActiveRhythm = uiState.preferences.rhythmReminders.any { it.isEnabled } ||
+                            uiState.preferences.quickReminders.any { it.triggerAtEpochMillis > System.currentTimeMillis() }
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Rounded.Notifications,
+                                contentDescription = "Ритм дня и напоминания",
+                                tint = if (hasActiveRhythm) IosOrange else IosBlue,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
 
                     IconButton(
@@ -632,6 +701,9 @@ fun ScheduleScreen(
                                             onStartFocusTimer = {
                                                 focusTimerTitle = item.details.activity.name
                                                 focusTimerMinutes = 45
+                                            },
+                                            onStartInteractiveSession = {
+                                                activeSessionSlotId = item.details.slot.id
                                             }
                                         )
                                     }
@@ -688,6 +760,7 @@ fun ScheduleScreen(
                 }
             }
         }
+    }
     }
 }
 

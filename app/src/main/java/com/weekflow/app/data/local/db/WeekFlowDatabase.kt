@@ -26,7 +26,7 @@ import com.weekflow.app.data.local.db.entity.VacationEntity
         TaskEntity::class,
         VacationEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class WeekFlowDatabase : RoomDatabase() {
@@ -39,6 +39,12 @@ abstract class WeekFlowDatabase : RoomDatabase() {
 
     companion object {
         const val DATABASE_NAME = "weekflow_database.db"
+
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `slots` ADD COLUMN `sessionItemsJson` TEXT NOT NULL DEFAULT '[]'")
+            }
+        }
 
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {

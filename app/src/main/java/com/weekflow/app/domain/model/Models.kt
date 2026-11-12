@@ -45,17 +45,12 @@ data class SchedulePreset(
         ): Pair<SchedulePreset, SchedulePreset?> {
             val all = if (presets.isEmpty()) listOf(DEFAULT_PRESET) else presets
             val dateScheduledPreset = all.firstOrNull { it.matchesDate(date) }
-            if (manualOverridePresetId != null) {
-                val chosen = all.firstOrNull { it.id == manualOverridePresetId }
-                    ?: all.firstOrNull { it.id == activePresetId }
-                    ?: all.first()
-                return Pair(chosen, dateScheduledPreset?.takeIf { it.id != chosen.id })
-            }
-            if (dateScheduledPreset != null) {
-                return Pair(dateScheduledPreset, dateScheduledPreset)
-            }
-            val active = all.firstOrNull { it.id == activePresetId } ?: all.first()
-            return Pair(active, null)
+            val chosenId = manualOverridePresetId ?: activePresetId
+            val chosen = all.firstOrNull { it.id == chosenId }
+                ?: all.firstOrNull { it.id == activePresetId }
+                ?: dateScheduledPreset
+                ?: all.first()
+            return Pair(chosen, dateScheduledPreset?.takeIf { it.id != chosen.id })
         }
     }
 }
@@ -64,8 +59,42 @@ data class SchedulePreset(
 data class SubtaskItem(
     val id: String = UUID.randomUUID().toString(),
     val title: String,
-    val isDone: Boolean = false
-)
+    val isDone: Boolean = false,
+    val sets: Int? = null,             // Подходы / Серии / Круги
+    val reps: String? = null,          // Повторы ("12 повт", "8-10") или номера
+    val durationSeconds: Int? = null,  // Таймер выполнения (сек)
+    val restSeconds: Int? = null,      // Таймер отдыха между подходами (сек)
+    val weightOrNote: String? = null,  // Рабочий вес / Инвентарь / Формула / Баллы / Докладчик
+    val completedSets: Int = 0
+) {
+    val isInteractiveStep: Boolean
+        get() = sets != null || durationSeconds != null || restSeconds != null || !reps.isNullOrBlank() || !weightOrNote.isNullOrBlank()
+
+    fun formatStepSummary(): String {
+        val parts = mutableListOf<String>()
+        if (sets != null && sets > 0) {
+            if (!reps.isNullOrBlank()) {
+                parts.add("$sets × $reps")
+            } else {
+                parts.add("$sets подх.")
+            }
+        } else if (!reps.isNullOrBlank()) {
+            parts.add(reps)
+        }
+        if (durationSeconds != null && durationSeconds > 0) {
+            val mins = durationSeconds / 60
+            val secs = durationSeconds % 60
+            parts.add(if (mins > 0 && secs == 0) "$mins мин" else if (mins > 0) "${mins}м ${secs}с" else "${secs} сек")
+        }
+        if (restSeconds != null && restSeconds > 0) {
+            parts.add("отдых ${restSeconds}с")
+        }
+        if (!weightOrNote.isNullOrBlank()) {
+            parts.add(weightOrNote)
+        }
+        return parts.joinToString(" • ")
+    }
+}
 
 @Serializable
 data class Activity(
@@ -93,7 +122,8 @@ data class Slot(
     val customType: String? = null,
     val customNote: String? = null,
     val periodOrder: Int = 1,
-    val presetId: String = SchedulePreset.DEFAULT_ID
+    val presetId: String = SchedulePreset.DEFAULT_ID,
+    val sessionItems: List<SubtaskItem> = emptyList()
 ) {
     fun parseStartTime(): LocalTime = try {
         LocalTime.parse(startTime, DateTimeFormatter.ofPattern("HH:mm"))
@@ -247,6 +277,82 @@ data class NextLessonMatch(
 )
 
 @Serializable
+data class RhythmReminder(
+    val id: String = UUID.randomUUID().toString(),
+    val title: String,
+    val subtitle: String = "",
+    val iconEmoji: String = "💧",
+    val intervalMinutes: Int = 90,
+    val startTime: String = "09:00",
+    val endTime: String = "21:30",
+    val isEnabled: Boolean = false
+) {
+    companion object {
+        val DEFAULT_LIST = listOf(
+            RhythmReminder(
+                id = "rhythm_water",
+                title = "Водный баланс",
+                subtitle = "Выпить стакан чистой воды",
+                iconEmoji = "💧",
+                intervalMinutes = 90,
+                startTime = "09:00",
+                endTime = "21:30",
+                isEnabled = false
+            ),
+            RhythmReminder(
+                id = "rhythm_posture",
+                title = "Осанка и разминка шеи",
+                subtitle = "Расправить плечи и сделать микро-разминку",
+                iconEmoji = "🧘",
+                intervalMinutes = 60,
+                startTime = "09:00",
+                endTime = "20:00",
+                isEnabled = false
+            ),
+            RhythmReminder(
+                id = "rhythm_eyes",
+                title = "Зрение 20-20-20",
+                subtitle = "Посмотреть вдаль на 20 секунд, дать отдых глазам",
+                iconEmoji = "👀",
+                intervalMinutes = 45,
+                startTime = "09:00",
+                endTime = "20:00",
+                isEnabled = false
+            ),
+            RhythmReminder(
+                id = "rhythm_focus_checkin",
+                title = "Сверка курса (Анти-прокрастинация)",
+                subtitle = "То, что ты делаешь сейчас, приближает к цели дня?",
+                iconEmoji = "🎯",
+                intervalMinutes = 120,
+                startTime = "10:00",
+                endTime = "20:00",
+                isEnabled = false
+            ),
+            RhythmReminder(
+                id = "rhythm_air",
+                title = "Проветривание и движение",
+                subtitle = "Встать, пройтись 3 минуты и пустить свежий воздух",
+                iconEmoji = "🌬️",
+                intervalMinutes = 180,
+                startTime = "09:00",
+                endTime = "21:00",
+                isEnabled = false
+            )
+        )
+    }
+}
+
+@Serializable
+data class QuickReminder(
+    val id: String = UUID.randomUUID().toString(),
+    val title: String,
+    val iconEmoji: String = "🔔",
+    val triggerAtEpochMillis: Long,
+    val targetTimeFormatted: String
+)
+
+@Serializable
 data class UserPreferences(
     val appProfile: AppProfile = AppProfile.STUDY,
     val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
@@ -272,7 +378,9 @@ data class UserPreferences(
     val activePresetId: String = SchedulePreset.DEFAULT_ID,
     val showAllPresetsTasks: Boolean = false,
     val focusSessionsCompleted: Int = 0,
-    val focusMinutesTotal: Int = 0
+    val focusMinutesTotal: Int = 0,
+    val rhythmReminders: List<RhythmReminder> = RhythmReminder.DEFAULT_LIST,
+    val quickReminders: List<QuickReminder> = emptyList()
 ) {
     fun parseSemesterStartDate(): LocalDate = try {
         LocalDate.parse(semesterStartDateIso)

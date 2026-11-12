@@ -53,8 +53,10 @@ import androidx.compose.ui.unit.sp
 import com.weekflow.app.core.designsystem.IosBlue
 import com.weekflow.app.core.designsystem.LocalIosColors
 import com.weekflow.app.core.designsystem.components.FocusTimerDialog
+import com.weekflow.app.core.designsystem.components.InteractiveSessionPlayerSheet
 import com.weekflow.app.core.localization.LocalAppProfile
 import com.weekflow.app.core.notifications.NotificationScheduler
+import com.weekflow.app.core.util.ColorParser
 import com.weekflow.app.domain.model.Activity
 import com.weekflow.app.domain.model.CalendarEvent
 import com.weekflow.app.domain.model.Slot
@@ -141,6 +143,7 @@ fun WeekFlowNavHost(
     var activeSheet by remember { mutableStateOf<ActiveSheet>(ActiveSheet.None) }
     var returnSheetAfterActivity by remember { mutableStateOf<ActiveSheet?>(null) }
     var navFocusTimerTitle by remember { mutableStateOf<String?>(null) }
+    var navActiveSessionTaskId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(
         scheduleUiState.activePreset.id,
@@ -405,39 +408,43 @@ fun WeekFlowNavHost(
                 if (slot != null) {
                     val slotActivities = scheduleUiState.rawAllActivities.filter { it.presetId == slot.presetId }
                     val slotSlots = scheduleUiState.rawAllSlots.filter { it.presetId == slot.presetId }
-                    SlotEditorSheet(
-                        initialSlot = slot,
-                        defaultDayOfWeek = slot.dayOfWeek,
-                        defaultActivityId = sheet.defaultActivityId,
-                        activities = slotActivities,
-                        existingSlots = slotSlots,
-                        isTwoWeekCycleEnabled = scheduleUiState.preferences.isTwoWeekCycleEnabled,
-                        presetId = slot.presetId,
-                        onDismiss = {
-                            returnSheetAfterActivity = null
-                            activeSheet = ActiveSheet.None
-                        },
-                        onSave = { updatedSlot ->
-                            scope.launch {
-                                scheduleRepository.upsertSlot(updatedSlot)
-                                notifyWidgetUpdate()
+                    val slotProfile = scheduleUiState.allPresets.firstOrNull { it.id == slot.presetId }?.appProfile
+                        ?: activeAppProfile
+                    CompositionLocalProvider(LocalAppProfile provides slotProfile) {
+                        SlotEditorSheet(
+                            initialSlot = slot,
+                            defaultDayOfWeek = slot.dayOfWeek,
+                            defaultActivityId = sheet.defaultActivityId,
+                            activities = slotActivities,
+                            existingSlots = slotSlots,
+                            isTwoWeekCycleEnabled = scheduleUiState.preferences.isTwoWeekCycleEnabled,
+                            presetId = slot.presetId,
+                            onDismiss = {
+                                returnSheetAfterActivity = null
+                                activeSheet = ActiveSheet.None
+                            },
+                            onSave = { updatedSlot ->
+                                scope.launch {
+                                    scheduleRepository.upsertSlot(updatedSlot)
+                                    notifyWidgetUpdate()
+                                }
+                            },
+                            onDelete = { slotId ->
+                                scope.launch {
+                                    scheduleRepository.deleteSlot(slotId)
+                                    notifyWidgetUpdate()
+                                }
+                            },
+                            onAddNewActivityRequest = {
+                                returnSheetAfterActivity = sheet
+                                activeSheet = ActiveSheet.AddActivity
+                            },
+                            onEditActivityRequest = { actId ->
+                                returnSheetAfterActivity = sheet
+                                activeSheet = ActiveSheet.EditActivity(actId)
                             }
-                        },
-                        onDelete = { slotId ->
-                            scope.launch {
-                                scheduleRepository.deleteSlot(slotId)
-                                notifyWidgetUpdate()
-                            }
-                        },
-                        onAddNewActivityRequest = {
-                            returnSheetAfterActivity = sheet
-                            activeSheet = ActiveSheet.AddActivity
-                        },
-                        onEditActivityRequest = { actId ->
-                            returnSheetAfterActivity = sheet
-                            activeSheet = ActiveSheet.EditActivity(actId)
-                        }
-                    )
+                        )
+                    }
                 }
             }
             is ActiveSheet.AddTask -> {
@@ -508,6 +515,10 @@ fun WeekFlowNavHost(
                     onStartFocusTimer = { title ->
                         activeSheet = ActiveSheet.None
                         navFocusTimerTitle = title
+                    },
+                    onStartInteractiveSession = {
+                        navActiveSessionTaskId = liveTask.id
+                        activeSheet = ActiveSheet.None
                     }
                 )
             }
@@ -652,6 +663,43 @@ fun WeekFlowNavHost(
                     tasksViewModel.recordFocusSession(mins)
                 }
             )
+        }
+
+        navActiveSessionTaskId?.let { taskId ->
+            val liveTask = tasksUiState.rawAllTasks.firstOrNull { it.id == taskId }
+                ?: scheduleUiState.allTasks.firstOrNull { it.id == taskId }
+            if (liveTask != null) {
+                val linkedAct = liveTask.linkedActivityId?.let { actId ->
+                    scheduleUiState.rawAllActivities.firstOrNull { it.id == actId }
+                }
+                val taskPreset = scheduleUiState.allPresets.firstOrNull { it.id == liveTask.presetId }
+                CompositionLocalProvider(
+                    LocalAppProfile provides (taskPreset?.appProfile ?: activeAppProfile)
+                ) {
+                    InteractiveSessionPlayerSheet(
+                        sessionTitle = liveTask.title,
+                        sessionSubtitle = linkedAct?.name ?: (taskPreset?.appProfile ?: activeAppProfile).taskTerm,
+                        accentColor = ColorParser.parseHexColor(
+                            linkedAct?.colorHex ?: taskPreset?.colorHex ?: scheduleUiState.activePreset.colorHex
+                        ),
+                        initialItems = liveTask.subtasks,
+                        onUpdateItems = { updated ->
+                            tasksViewModel.updateTaskSubtasks(liveTask, updated)
+                        },
+                        onAddFollowUpTask = { title ->
+                            tasksViewModel.addQuickFollowUpTask(
+                                title = title,
+                                activityId = liveTask.linkedActivityId,
+                                presetId = liveTask.presetId.ifBlank { currentPresetId }
+                            )
+                        },
+                        onSessionCompleted = { mins -> tasksViewModel.recordFocusSession(mins) },
+                        onDismiss = { navActiveSessionTaskId = null }
+                    )
+                }
+            } else {
+                navActiveSessionTaskId = null
+            }
         }
     }
     }

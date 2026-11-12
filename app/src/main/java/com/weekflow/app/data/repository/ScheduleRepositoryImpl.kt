@@ -147,19 +147,22 @@ class ScheduleRepositoryImpl(
             activityDao.upsertAll(actEntities)
 
             val slotEntities = payload.slots.map { slot ->
-                SlotEntity(
-                    id = slot.id,
-                    activityTypeId = slot.activityTypeId,
-                    dayOfWeek = slot.dayOfWeek,
-                    weekCycle = slot.weekCycle.name,
-                    startTime = slot.startTime,
-                    endTime = slot.endTime,
-                    customLocation = slot.customLocation,
-                    customInstructor = slot.customInstructor,
-                    customType = slot.customType,
-                    customNote = slot.customNote,
-                    periodOrder = slot.periodOrder,
-                    presetId = targetPreset
+                SlotEntity.fromDomain(
+                    Slot(
+                        id = slot.id,
+                        activityTypeId = slot.activityTypeId,
+                        dayOfWeek = slot.dayOfWeek,
+                        weekCycle = slot.weekCycle,
+                        startTime = slot.startTime,
+                        endTime = slot.endTime,
+                        customLocation = slot.customLocation,
+                        customInstructor = slot.customInstructor,
+                        customType = slot.customType,
+                        customNote = slot.customNote,
+                        periodOrder = slot.periodOrder,
+                        presetId = targetPreset,
+                        sessionItems = slot.sessionItems
+                    )
                 )
             }
             slotDao.upsertAll(slotEntities)
@@ -447,19 +450,22 @@ class ScheduleRepositoryImpl(
             activityDao.upsertAll(actEntities)
 
             val slotEntities = payload.slots.map { slot ->
-                SlotEntity(
-                    id = scopeId(slot.id, targetPreset),
-                    activityTypeId = scopeId(slot.activityTypeId, targetPreset),
-                    dayOfWeek = slot.dayOfWeek,
-                    weekCycle = slot.weekCycle.name,
-                    startTime = slot.startTime,
-                    endTime = slot.endTime,
-                    customLocation = slot.customLocation,
-                    customInstructor = slot.customInstructor,
-                    customType = slot.customType,
-                    customNote = slot.customNote,
-                    periodOrder = slot.periodOrder,
-                    presetId = targetPreset
+                SlotEntity.fromDomain(
+                    Slot(
+                        id = scopeId(slot.id, targetPreset),
+                        activityTypeId = scopeId(slot.activityTypeId, targetPreset),
+                        dayOfWeek = slot.dayOfWeek,
+                        weekCycle = slot.weekCycle,
+                        startTime = slot.startTime,
+                        endTime = slot.endTime,
+                        customLocation = slot.customLocation,
+                        customInstructor = slot.customInstructor,
+                        customType = slot.customType,
+                        customNote = slot.customNote,
+                        periodOrder = slot.periodOrder,
+                        presetId = targetPreset,
+                        sessionItems = slot.sessionItems
+                    )
                 )
             }
             slotDao.upsertAll(slotEntities)
@@ -521,19 +527,22 @@ class ScheduleRepositoryImpl(
             activityDao.upsertAll(actEntities)
 
             val slotEntities = payload.slots.map { slot ->
-                SlotEntity(
-                    id = scopeId(slot.id, targetPreset),
-                    activityTypeId = scopeId(slot.activityTypeId, targetPreset),
-                    dayOfWeek = slot.dayOfWeek,
-                    weekCycle = slot.weekCycle.name,
-                    startTime = slot.startTime,
-                    endTime = slot.endTime,
-                    customLocation = slot.customLocation,
-                    customInstructor = slot.customInstructor,
-                    customType = slot.customType,
-                    customNote = slot.customNote,
-                    periodOrder = slot.periodOrder,
-                    presetId = targetPreset
+                SlotEntity.fromDomain(
+                    Slot(
+                        id = scopeId(slot.id, targetPreset),
+                        activityTypeId = scopeId(slot.activityTypeId, targetPreset),
+                        dayOfWeek = slot.dayOfWeek,
+                        weekCycle = slot.weekCycle,
+                        startTime = slot.startTime,
+                        endTime = slot.endTime,
+                        customLocation = slot.customLocation,
+                        customInstructor = slot.customInstructor,
+                        customType = slot.customType,
+                        customNote = slot.customNote,
+                        periodOrder = slot.periodOrder,
+                        presetId = targetPreset,
+                        sessionItems = slot.sessionItems
+                    )
                 )
             }
             slotDao.upsertAll(slotEntities)
@@ -609,7 +618,8 @@ class ScheduleRepositoryImpl(
                     customInstructor = domain.customInstructor,
                     customType = domain.customType,
                     customNote = domain.customNote,
-                    periodOrder = domain.periodOrder
+                    periodOrder = domain.periodOrder,
+                    sessionItems = domain.sessionItems
                 )
             }
 

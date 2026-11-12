@@ -40,6 +40,7 @@ import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.HourglassEmpty
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.QueryStats
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -52,6 +53,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -77,6 +79,7 @@ import com.weekflow.app.core.designsystem.IosRed
 import com.weekflow.app.core.designsystem.LocalIosColors
 import com.weekflow.app.core.designsystem.components.FocusTimerDialog
 import com.weekflow.app.core.designsystem.components.IosSegmentedControl
+import com.weekflow.app.core.designsystem.components.RhythmAndRemindersSheet
 import com.weekflow.app.core.designsystem.components.TaskItemRow
 import com.weekflow.app.core.designsystem.components.UndoIncidentBanner
 import com.weekflow.app.core.localization.LocalAppProfile
@@ -103,7 +106,7 @@ fun TasksScreen(
     val uiState by viewModel.uiState.collectAsState()
     val undoSnapshot by viewModel.lastUndoSnapshot.collectAsState()
     val iosColors = LocalIosColors.current
-    val appProfile = LocalAppProfile.current
+    val appProfile = uiState.activePreset.appProfile
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val focusManager = LocalFocusManager.current
@@ -128,8 +131,20 @@ fun TasksScreen(
     var showSearchBar by remember { mutableStateOf(false) }
     var showPresetSheet by remember { mutableStateOf(false) }
     var showInsightsSheet by remember { mutableStateOf(false) }
+    var showRhythmSheet by remember { mutableStateOf(false) }
 
     val presetColor = ColorParser.parseHexColor(uiState.activePreset.colorHex)
+
+    CompositionLocalProvider(LocalAppProfile provides appProfile) {
+    if (showRhythmSheet) {
+        RhythmAndRemindersSheet(
+            rhythmReminders = uiState.preferences.rhythmReminders,
+            quickReminders = uiState.preferences.quickReminders,
+            onUpdateRhythmReminders = { viewModel.updateRhythmReminders(it) },
+            onUpdateQuickReminders = { viewModel.updateQuickReminders(it) },
+            onDismiss = { showRhythmSheet = false }
+        )
+    }
 
     if (showPresetSheet) {
         PresetManagerSheet(
@@ -179,13 +194,16 @@ fun TasksScreen(
                             text = appProfile.taskTerm,
                             fontSize = 19.sp,
                             fontWeight = FontWeight.Bold,
-                            color = iosColors.textPrimary
+                            color = iosColors.textPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
                         )
 
                         // Interactive Preset Pill
                         Box(
                             modifier = Modifier
-                                .widthIn(max = 140.dp)
+                                .widthIn(min = 78.dp, max = 132.dp)
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(presetColor.copy(alpha = 0.14f))
                                 .border(
@@ -226,16 +244,31 @@ fun TasksScreen(
                     IconButton(
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            showRhythmSheet = true
+                        },
+                        modifier = Modifier.size(30.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.NotificationsActive,
+                            contentDescription = "Напоминания",
+                            tint = IosBlue,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             val formatted = viewModel.buildFormattedTasksByDays()
                             copyTextToClipboard(formatted, "Задачи по дням скопированы в буфер обмена!")
                         },
-                        modifier = Modifier.size(34.dp)
+                        modifier = Modifier.size(30.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.ContentCopy,
                             contentDescription = "Скопировать задачи по дням",
                             tint = IosBlue,
-                            modifier = Modifier.size(19.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                     }
 
@@ -247,12 +280,13 @@ fun TasksScreen(
                                 viewModel.onSearchQueryChanged("")
                             }
                         },
-                        modifier = Modifier.size(34.dp)
+                        modifier = Modifier.size(30.dp)
                     ) {
                         Icon(
                             imageVector = if (showSearchBar) Icons.Rounded.Close else Icons.Rounded.Search,
                             contentDescription = "Поиск задач",
-                            tint = IosBlue
+                            tint = IosBlue,
+                            modifier = Modifier.size(19.dp)
                         )
                     }
 
@@ -261,12 +295,13 @@ fun TasksScreen(
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             showInsightsSheet = true
                         },
-                        modifier = Modifier.size(34.dp)
+                        modifier = Modifier.size(30.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.QueryStats,
                             contentDescription = "Статистика",
-                            tint = IosBlue
+                            tint = IosBlue,
+                            modifier = Modifier.size(19.dp)
                         )
                     }
 
@@ -276,12 +311,13 @@ fun TasksScreen(
                             focusTimerTitle = "Фокус-сессия"
                             showFocusTimer = true
                         },
-                        modifier = Modifier.size(34.dp)
+                        modifier = Modifier.size(30.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.HourglassEmpty,
                             contentDescription = "Фокус таймер",
-                            tint = IosBlue
+                            tint = IosBlue,
+                            modifier = Modifier.size(19.dp)
                         )
                     }
 
@@ -362,7 +398,7 @@ fun TasksScreen(
             }
             // Segmented Control (4 filter tabs)
             IosSegmentedControl(
-                items = listOf("Актуальные", "По дням", "По предметам", "Готовые"),
+                items = listOf("Актуальные", "По дням", appProfile.bySubjectTabLabel, "Готовые"),
                 selectedIndex = uiState.selectedTab,
                 onItemSelected = { viewModel.selectTab(it) },
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
@@ -771,6 +807,7 @@ fun TasksScreen(
             onDismiss = { showFocusTimer = false },
             onSessionCompleted = { mins -> viewModel.recordFocusSession(mins) }
         )
+    }
     }
 }
 

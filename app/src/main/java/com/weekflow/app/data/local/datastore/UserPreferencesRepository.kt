@@ -12,6 +12,8 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.weekflow.app.domain.model.AppProfile
 import com.weekflow.app.domain.model.AppThemeMode
 import com.weekflow.app.domain.model.CardDensity
+import com.weekflow.app.domain.model.QuickReminder
+import com.weekflow.app.domain.model.RhythmReminder
 import com.weekflow.app.domain.model.ScheduleCardStyle
 import com.weekflow.app.domain.model.SchedulePreset
 import com.weekflow.app.domain.model.ScheduleViewMode
@@ -21,9 +23,16 @@ import com.weekflow.app.widget.WeekFlowWidgetUpdater
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import java.io.IOException
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "user_preferences")
+
+private val reminderJsonParser = Json {
+    ignoreUnknownKeys = true
+    encodeDefaults = true
+}
 
 class UserPreferencesRepository(context: Context) : PreferencesRepository {
 
@@ -63,6 +72,8 @@ class UserPreferencesRepository(context: Context) : PreferencesRepository {
         val SHOW_ALL_PRESETS_TASKS = booleanPreferencesKey("show_all_presets_tasks")
         val FOCUS_SESSIONS_COMPLETED = intPreferencesKey("focus_sessions_completed")
         val FOCUS_MINUTES_TOTAL = intPreferencesKey("focus_minutes_total")
+        val RHYTHM_REMINDERS_JSON = stringPreferencesKey("rhythm_reminders_json")
+        val QUICK_REMINDERS_JSON = stringPreferencesKey("quick_reminders_json")
     }
 
     override val userPreferences: Flow<UserPreferences> = appContext.dataStore.data
@@ -112,6 +123,14 @@ class UserPreferencesRepository(context: Context) : PreferencesRepository {
             val showAllPresetsTasks = preferences[PreferencesKeys.SHOW_ALL_PRESETS_TASKS] ?: false
             val focusSessionsCompleted = preferences[PreferencesKeys.FOCUS_SESSIONS_COMPLETED] ?: 0
             val focusMinutesTotal = preferences[PreferencesKeys.FOCUS_MINUTES_TOTAL] ?: 0
+            val rhythmReminders = preferences[PreferencesKeys.RHYTHM_REMINDERS_JSON]?.let { raw ->
+                try { reminderJsonParser.decodeFromString<List<RhythmReminder>>(raw) } catch (_: Exception) { null }
+            }?.takeIf { it.isNotEmpty() } ?: RhythmReminder.DEFAULT_LIST
+
+            val nowMs = System.currentTimeMillis()
+            val quickReminders = preferences[PreferencesKeys.QUICK_REMINDERS_JSON]?.let { raw ->
+                try { reminderJsonParser.decodeFromString<List<QuickReminder>>(raw) } catch (_: Exception) { null }
+            }?.filter { it.triggerAtEpochMillis > nowMs - 60_000L } ?: emptyList()
 
             UserPreferences(
                 appProfile = profile,
@@ -138,7 +157,9 @@ class UserPreferencesRepository(context: Context) : PreferencesRepository {
                 activePresetId = activePresetId,
                 showAllPresetsTasks = showAllPresetsTasks,
                 focusSessionsCompleted = focusSessionsCompleted,
-                focusMinutesTotal = focusMinutesTotal
+                focusMinutesTotal = focusMinutesTotal,
+                rhythmReminders = rhythmReminders,
+                quickReminders = quickReminders
             )
         }
 
@@ -295,6 +316,20 @@ class UserPreferencesRepository(context: Context) : PreferencesRepository {
             val currentMinutes = preferences[PreferencesKeys.FOCUS_MINUTES_TOTAL] ?: 0
             preferences[PreferencesKeys.FOCUS_SESSIONS_COMPLETED] = currentSessions + 1
             preferences[PreferencesKeys.FOCUS_MINUTES_TOTAL] = currentMinutes + minutes.coerceAtLeast(1)
+        }
+    }
+
+    override suspend fun updateRhythmReminders(reminders: List<RhythmReminder>) {
+        appContext.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.RHYTHM_REMINDERS_JSON] =
+                try { reminderJsonParser.encodeToString(reminders) } catch (_: Exception) { "[]" }
+        }
+    }
+
+    override suspend fun updateQuickReminders(reminders: List<QuickReminder>) {
+        appContext.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.QUICK_REMINDERS_JSON] =
+                try { reminderJsonParser.encodeToString(reminders) } catch (_: Exception) { "[]" }
         }
     }
 }

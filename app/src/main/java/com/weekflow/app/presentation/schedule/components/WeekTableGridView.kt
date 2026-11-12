@@ -283,7 +283,7 @@ fun WeekTableGridView(
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(
-                                    text = if (period <= 0) "Вне" else period.toString(),
+                                    text = if (period <= 0) "Доп" else period.toString(),
                                     fontSize = (if (period <= 0) 11f * scaleFactor else 14f * scaleFactor).coerceAtLeast(9f).sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (period <= 0) IosBlue else iosColors.textPrimary

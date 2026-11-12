@@ -149,22 +149,33 @@ data class SlotEntity(
     val customNote: String?,
     val periodOrder: Int,
     @ColumnInfo(defaultValue = "'default'")
-    val presetId: String = SchedulePreset.DEFAULT_ID
+    val presetId: String = SchedulePreset.DEFAULT_ID,
+    @ColumnInfo(defaultValue = "'[]'")
+    val sessionItemsJson: String = "[]"
 ) {
-    fun toDomain(): Slot = Slot(
-        id = id,
-        activityTypeId = activityTypeId,
-        dayOfWeek = dayOfWeek,
-        weekCycle = try { WeekCycle.valueOf(weekCycle) } catch (_: Exception) { WeekCycle.EVERY_WEEK },
-        startTime = startTime,
-        endTime = endTime,
-        customLocation = customLocation,
-        customInstructor = customInstructor,
-        customType = customType,
-        customNote = customNote,
-        periodOrder = periodOrder,
-        presetId = presetId.ifBlank { SchedulePreset.DEFAULT_ID }
-    )
+    fun toDomain(): Slot {
+        val parsedItems = try {
+            if (sessionItemsJson.isBlank()) emptyList()
+            else subtaskJsonParser.decodeFromString<List<SubtaskItem>>(sessionItemsJson)
+        } catch (_: Exception) {
+            emptyList()
+        }
+        return Slot(
+            id = id,
+            activityTypeId = activityTypeId,
+            dayOfWeek = dayOfWeek,
+            weekCycle = try { WeekCycle.valueOf(weekCycle) } catch (_: Exception) { WeekCycle.EVERY_WEEK },
+            startTime = startTime,
+            endTime = endTime,
+            customLocation = customLocation,
+            customInstructor = customInstructor,
+            customType = customType,
+            customNote = customNote,
+            periodOrder = periodOrder,
+            presetId = presetId.ifBlank { SchedulePreset.DEFAULT_ID },
+            sessionItems = parsedItems
+        )
+    }
 
     companion object {
         fun fromDomain(domain: Slot): SlotEntity = SlotEntity(
@@ -179,7 +190,8 @@ data class SlotEntity(
             customType = domain.customType,
             customNote = domain.customNote,
             periodOrder = domain.periodOrder,
-            presetId = domain.presetId.ifBlank { SchedulePreset.DEFAULT_ID }
+            presetId = domain.presetId.ifBlank { SchedulePreset.DEFAULT_ID },
+            sessionItemsJson = try { subtaskJsonParser.encodeToString(domain.sessionItems) } catch (_: Exception) { "[]" }
         )
     }
 }
