@@ -10,9 +10,7 @@ import android.os.Build
 import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,7 +26,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -37,20 +34,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.Undo
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Notifications
-import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -59,7 +51,6 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -83,18 +74,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.weekflow.app.core.designsystem.IosBlue
-import com.weekflow.app.core.designsystem.IosDarkBackground
 import com.weekflow.app.core.designsystem.IosGreen
 import com.weekflow.app.core.designsystem.IosOrange
-import com.weekflow.app.core.designsystem.IosPurple
 import com.weekflow.app.core.designsystem.IosRed
-import com.weekflow.app.core.designsystem.components.RhythmAndRemindersSheet
 import com.weekflow.app.core.designsystem.LocalIosColors
 import com.weekflow.app.core.designsystem.components.IosCalendarDatePickerDialog
 import com.weekflow.app.core.designsystem.components.IosDatePickerButton
 import com.weekflow.app.core.designsystem.components.IosSegmentedControl
 import com.weekflow.app.core.designsystem.components.IosWheelTimePickerDialog
 import com.weekflow.app.core.designsystem.components.LessonSlotCard
+import com.weekflow.app.core.designsystem.components.RegularRemindersSheet
 import com.weekflow.app.core.designsystem.components.UndoIncidentBanner
 import com.weekflow.app.core.designsystem.iosSwitchColors
 import com.weekflow.app.core.util.ColorParser
@@ -111,9 +100,7 @@ import com.weekflow.app.domain.model.TaskPriority
 import com.weekflow.app.domain.usecase.ImportMode
 import com.weekflow.app.presentation.editors.PresetManagerSheet
 import kotlinx.coroutines.flow.collectLatest
-import java.time.DayOfWeek
 import java.time.LocalDate
-import java.time.temporal.TemporalAdjusters
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -139,11 +126,9 @@ fun SettingsScreen(
     var showRhythmSheet by remember { mutableStateOf(false) }
 
     if (showRhythmSheet) {
-        RhythmAndRemindersSheet(
-            rhythmReminders = uiState.preferences.rhythmReminders,
-            quickReminders = uiState.preferences.quickReminders,
-            onUpdateRhythmReminders = { viewModel.updateRhythmReminders(it) },
-            onUpdateQuickReminders = { viewModel.updateQuickReminders(it) },
+        RegularRemindersSheet(
+            reminders = uiState.preferences.regularReminders,
+            onUpdateReminders = { viewModel.updateRegularReminders(it) },
             onDismiss = { showRhythmSheet = false }
         )
     }
@@ -207,59 +192,12 @@ fun SettingsScreen(
             TopAppBar(
                 windowInsets = TopAppBarDefaults.windowInsets,
                 title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "Настройки",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = iosColors.textPrimary
-                        )
-                        val activePreset = uiState.presets.find { it.id == uiState.preferences.activePresetId }
-                            ?: uiState.presets.firstOrNull()
-                        if (activePreset != null) {
-                            val presetColor = ColorParser.parseHexColor(activePreset.colorHex)
-                            Box(
-                                modifier = Modifier
-                                    .widthIn(max = 155.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(presetColor.copy(alpha = 0.14f))
-                                    .border(
-                                        BorderStroke(1.dp, presetColor.copy(alpha = 0.4f)),
-                                        RoundedCornerShape(10.dp)
-                                    )
-                                    .clickable {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        showPresetSheet = true
-                                    }
-                                    .padding(horizontal = 7.dp, vertical = 2.5.dp)
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
-                                ) {
-                                    Text(text = activePreset.iconEmoji, fontSize = 11.sp)
-                                    Text(
-                                        text = activePreset.name,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = presetColor,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f, fill = false)
-                                    )
-                                    Icon(
-                                        imageVector = Icons.Rounded.KeyboardArrowDown,
-                                        contentDescription = "Пресеты",
-                                        tint = presetColor,
-                                        modifier = Modifier.size(13.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
+                    Text(
+                        text = "Настройки",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = iosColors.textPrimary
+                    )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = iosColors.background
@@ -287,7 +225,13 @@ fun SettingsScreen(
             item(key = "section_personalization") {
                 SettingsSection(title = "ПЕРСОНАЛИЗАЦИЯ И ПРОФИЛЬ") {
                     SettingsRow(
-                        label = "Профиль пресета «${uiState.activePreset.name}»",
+                        label = "Активный пресет",
+                        value = "${uiState.activePreset.iconEmoji} ${uiState.activePreset.name}",
+                        onClick = { showPresetSheet = true }
+                    )
+                    SettingsDivider()
+                    SettingsRow(
+                        label = "Профиль пресета",
                         value = uiState.activePreset.appProfile.title,
                         onClick = { showProfileDialog = true }
                     )
@@ -432,14 +376,12 @@ fun SettingsScreen(
                     SettingsDivider()
                     SettingsSwitchRow(
                         label = "Показывать перерывы",
-                        sublabel = "Разделители с длительностью перерывов",
                         checked = uiState.preferences.showBreaks,
                         onCheckedChange = { viewModel.onToggleShowBreaks(it) }
                     )
                     SettingsDivider()
                     SettingsSwitchRow(
-                        label = "Полоса прогресса занятия",
-                        sublabel = "Отображать прогресс текущего занятия",
+                        label = "Полоса прогресса",
                         checked = uiState.preferences.showProgressBar,
                         onCheckedChange = { viewModel.onToggleShowProgressBar(it) }
                     )
@@ -451,7 +393,6 @@ fun SettingsScreen(
                 SettingsSection(title = "УВЕДОМЛЕНИЯ И НАПОМИНАНИЯ") {
                     SettingsSwitchRow(
                         label = "Уведомления",
-                        sublabel = "Напоминания о занятиях и вечерние сводки",
                         checked = uiState.preferences.notificationsEnabled,
                         onCheckedChange = { viewModel.onToggleNotifications(it) }
                     )
@@ -459,56 +400,43 @@ fun SettingsScreen(
                     if (uiState.preferences.notificationsEnabled) {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !canScheduleExact) {
                             SettingsDivider()
-                            Box(
+                            Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 14.dp, vertical = 10.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(IosOrange.copy(alpha = 0.14f))
-                                    .border(1.dp, IosOrange.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
-                                    .padding(14.dp)
+                                    .background(IosOrange.copy(alpha = 0.09f))
+                                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.WarningAmber,
-                                            contentDescription = null,
-                                            tint = IosOrange,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = "Точные будильники отключены",
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = iosColors.textPrimary
-                                        )
-                                    }
-                                    Text(
-                                        text = "На Android 12+ (MIUI, HyperOS, OneUI) для гарантированной доставки напоминаний перед уроками необходимо системное разрешение.",
-                                        fontSize = 12.sp,
-                                        color = iosColors.textSecondary
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.WarningAmber,
+                                        contentDescription = null,
+                                        tint = IosOrange,
+                                        modifier = Modifier.size(18.dp)
                                     )
-                                    Button(
-                                        onClick = {
-                                            try {
-                                                val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
-                                                    data = Uri.parse("package:${context.packageName}")
-                                                }
-                                                context.startActivity(intent)
-                                            } catch (_: Exception) {}
-                                        },
-                                        colors = ButtonDefaults.buttonColors(containerColor = IosOrange),
-                                        shape = RoundedCornerShape(10.dp),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Text(
-                                            text = "Разрешить точные будильники в системе",
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = Color.White
-                                        )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Нет разрешения на точные будильники",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = iosColors.textPrimary
+                                    )
+                                }
+                                TextButton(
+                                    onClick = {
+                                        try {
+                                            val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                                                data = Uri.parse("package:${context.packageName}")
+                                            }
+                                            context.startActivity(intent)
+                                        } catch (_: Exception) {}
                                     }
+                                ) {
+                                    Text("Разрешить", fontWeight = FontWeight.SemiBold, color = IosBlue)
                                 }
                             }
                         }
@@ -522,7 +450,7 @@ fun SettingsScreen(
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Text(
-                                text = "Напоминать до начала занятия",
+                                text = "Напоминать до начала",
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Medium,
                                 color = iosColors.textPrimary
@@ -541,44 +469,29 @@ fun SettingsScreen(
 
                         SettingsDivider()
                         SettingsSwitchRow(
-                            label = "Вечерняя сводка на завтра",
-                            sublabel = "Уведомление с расписанием на завтра в ${uiState.preferences.eveningSummaryTime}",
+                            label = "Вечерняя сводка",
                             checked = uiState.preferences.eveningSummaryEnabled,
-                            onCheckedChange = { viewModel.onToggleEveningSummary(it) }
+                            onCheckedChange = { viewModel.onToggleEveningSummary(it) },
+                            trailingBadge = if (uiState.preferences.eveningSummaryEnabled) uiState.preferences.eveningSummaryTime else null,
+                            onTrailingBadgeClick = { showEveningTimeDialog = true }
                         )
-                        if (uiState.preferences.eveningSummaryEnabled) {
-                            SettingsDivider()
-                            SettingsRow(
-                                label = "Время вечерней сводки",
-                                value = uiState.preferences.eveningSummaryTime,
-                                onClick = { showEveningTimeDialog = true }
-                            )
-                        }
 
                         SettingsDivider()
                         SettingsSwitchRow(
-                            label = "Утренние напоминания о задачах",
-                            sublabel = "Уведомление о задачах на сегодня в ${uiState.preferences.taskRemindersTime}",
+                            label = "Утренние задачи",
                             checked = uiState.preferences.taskRemindersEnabled,
-                            onCheckedChange = { viewModel.onToggleTaskReminders(it) }
+                            onCheckedChange = { viewModel.onToggleTaskReminders(it) },
+                            trailingBadge = if (uiState.preferences.taskRemindersEnabled) uiState.preferences.taskRemindersTime else null,
+                            onTrailingBadgeClick = { showMorningTaskTimeDialog = true }
                         )
-                        if (uiState.preferences.taskRemindersEnabled) {
-                            SettingsDivider()
-                            SettingsRow(
-                                label = "Время утреннего напоминания",
-                                value = uiState.preferences.taskRemindersTime,
-                                onClick = { showMorningTaskTimeDialog = true }
-                            )
-                        }
 
                         SettingsDivider()
-                        val enabledRhythmCount = uiState.preferences.rhythmReminders.count { it.isEnabled }
-                        val quickCount = uiState.preferences.quickReminders.size
+                        val activeReminderCount = uiState.preferences.regularReminders.count { it.isEnabled }
                         SettingsButtonRow(
                             icon = Icons.Rounded.Notifications,
-                            label = "Интервальные и быстрые",
-                            sublabel = "Вода, разминка, осанка • $enabledRhythmCount интерв., $quickCount быстр.",
-                            iconTint = IosOrange,
+                            label = "Регулярные напоминания",
+                            sublabel = if (activeReminderCount > 0) "Активно: $activeReminderCount" else null,
+                            iconTint = IosBlue,
                             onClick = { showRhythmSheet = true }
                         )
                     }
@@ -589,15 +502,13 @@ fun SettingsScreen(
             item(key = "section_week_cycle") {
                 SettingsSection(title = "НЕДЕЛЬНЫЙ ЦИКЛ") {
                     SettingsSwitchRow(
-                        label = "Суббота — выходной день",
-                        sublabel = "Подсвечивать субботу как выходной в календаре и расписании",
+                        label = "Суббота — выходной",
                         checked = uiState.preferences.isSaturdayWeekend,
                         onCheckedChange = { viewModel.onToggleSaturdayWeekend(it) }
                     )
                     SettingsDivider()
                     SettingsSwitchRow(
                         label = "Двухнедельное расписание",
-                        sublabel = "Числитель и знаменатель (чет / нечет)",
                         checked = uiState.preferences.isTwoWeekCycleEnabled,
                         onCheckedChange = { viewModel.onToggleTwoWeekCycle(it) }
                     )
@@ -614,7 +525,7 @@ fun SettingsScreen(
                         SettingsButtonRow(
                             icon = Icons.Rounded.SwapHoriz,
                             label = "Поменять текущую неделю",
-                            sublabel = if (uiState.preferences.invertWeekCycle) "Сейчас инвертировано" else "Обычный порядок",
+                            sublabel = if (uiState.preferences.invertWeekCycle) "Инвертировано" else null,
                             iconTint = IosBlue,
                             onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -625,21 +536,19 @@ fun SettingsScreen(
                 }
             }
 
-            // 3. ✨ ИИ-Генератор и JSON Импорт / Экспорт
+            // 3. ИИ и данные (JSON)
             item(key = "section_ai_json") {
-                SettingsSection(title = "✨ ИИ-ГЕНЕРАТОР И РАСПИСАНИЕ В JSON") {
+                SettingsSection(title = "ИИ И ДАННЫЕ (JSON)") {
                     SettingsButtonRow(
                         icon = Icons.Rounded.ContentCopy,
                         label = "Скопировать промпт для ИИ",
-                        sublabel = "Отправьте фото расписания в ChatGPT / Claude",
-                        iconTint = IosPurple,
+                        iconTint = IosBlue,
                         onClick = { viewModel.copyAiPrompt(context) }
                     )
                     SettingsDivider()
                     SettingsButtonRow(
                         icon = Icons.Rounded.Download,
-                        label = "Импортировать JSON расписания",
-                        sublabel = "Вставить готовый ответ от нейросети",
+                        label = "Импортировать JSON",
                         iconTint = IosBlue,
                         onClick = {
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -650,9 +559,8 @@ fun SettingsScreen(
                     SettingsDivider()
                     SettingsButtonRow(
                         icon = Icons.Rounded.Share,
-                        label = "Экспортировать расписание (JSON)",
-                        sublabel = "Поделиться чистым файлом расписания",
-                        iconTint = IosGreen,
+                        label = "Экспортировать JSON",
+                        iconTint = IosBlue,
                         onClick = { viewModel.exportSchedule() }
                     )
                     if (undoSnapshot != null) {
@@ -660,8 +568,7 @@ fun SettingsScreen(
                         SettingsButtonRow(
                             icon = Icons.AutoMirrored.Rounded.Undo,
                             label = "Отменить: ${undoSnapshot!!.actionLabel}",
-                            sublabel = "Вернуть данные до последнего удаления или замены",
-                            iconTint = IosOrange,
+                            iconTint = IosBlue,
                             onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 viewModel.restoreLastUndo()
@@ -676,14 +583,12 @@ fun SettingsScreen(
                 SettingsSection(title = "ПРАЗДНИКИ И КАНИКУЛЫ") {
                     SettingsSwitchRow(
                         label = "Праздники РФ",
-                        sublabel = "Показывать государственные праздники",
                         checked = uiState.preferences.showRussianHolidays,
                         onCheckedChange = { viewModel.onToggleRussianHolidays(it) }
                     )
                     SettingsDivider()
                     SettingsSwitchRow(
-                        label = "Умный движок задач",
-                        sublabel = "Не ставить задачи на праздники и каникулы",
+                        label = "Пропускать праздники в задачах",
                         checked = uiState.preferences.skipHolidaysInSmartHomework,
                         onCheckedChange = { viewModel.onToggleSkipHolidaysInHomework(it) }
                     )
@@ -691,7 +596,6 @@ fun SettingsScreen(
                     SettingsButtonRow(
                         icon = Icons.Rounded.Add,
                         label = "Добавить каникулы / отпуск",
-                        sublabel = "Пользовательские периоды отдыха",
                         iconTint = IosBlue,
                         onClick = { showAddVacationDialog = true }
                     )
@@ -860,19 +764,13 @@ fun SettingsScreen(
                                 .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = profile.title,
-                                    fontSize = 15.sp,
-                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                    color = if (isSelected) IosBlue else iosColors.textPrimary
-                                )
-                                Text(
-                                    text = "${profile.subjectTerm} • ${profile.itemTerm} • ${profile.instructorTerm} • ${profile.locationTerm}",
-                                    fontSize = 11.sp,
-                                    color = iosColors.textSecondary
-                                )
-                            }
+                            Text(
+                                text = profile.title,
+                                fontSize = 15.sp,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (isSelected) IosBlue else iosColors.textPrimary,
+                                modifier = Modifier.weight(1f)
+                            )
                             if (isSelected) {
                                 Icon(Icons.Rounded.Check, contentDescription = null, tint = IosBlue)
                             }
@@ -1194,9 +1092,9 @@ fun SettingsRow(
 fun SettingsButtonRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
-    sublabel: String,
     iconTint: Color,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    sublabel: String? = null
 ) {
     val iosColors = LocalIosColors.current
 
@@ -1231,11 +1129,13 @@ fun SettingsButtonRow(
                 fontWeight = FontWeight.Medium,
                 color = iosColors.textPrimary
             )
-            Text(
-                text = sublabel,
-                fontSize = 12.sp,
-                color = iosColors.textSecondary
-            )
+            if (!sublabel.isNullOrBlank()) {
+                Text(
+                    text = sublabel,
+                    fontSize = 12.sp,
+                    color = iosColors.textSecondary
+                )
+            }
         }
 
         Icon(
@@ -1250,9 +1150,11 @@ fun SettingsButtonRow(
 @Composable
 fun SettingsSwitchRow(
     label: String,
-    sublabel: String,
     checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
+    onCheckedChange: (Boolean) -> Unit,
+    sublabel: String? = null,
+    trailingBadge: String? = null,
+    onTrailingBadgeClick: (() -> Unit)? = null
 ) {
     val iosColors = LocalIosColors.current
 
@@ -1270,17 +1172,40 @@ fun SettingsSwitchRow(
                 fontWeight = FontWeight.Medium,
                 color = iosColors.textPrimary
             )
-            Text(
-                text = sublabel,
-                fontSize = 12.sp,
-                color = iosColors.textSecondary
+            if (!sublabel.isNullOrBlank()) {
+                Text(
+                    text = sublabel,
+                    fontSize = 12.sp,
+                    color = iosColors.textSecondary
+                )
+            }
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            if (!trailingBadge.isNullOrBlank() && onTrailingBadgeClick != null) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(IosBlue.copy(alpha = 0.14f))
+                        .clickable { onTrailingBadgeClick() }
+                        .padding(horizontal = 9.dp, vertical = 5.dp)
+                ) {
+                    Text(
+                        text = trailingBadge,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = IosBlue
+                    )
+                }
+            }
+            Switch(
+                checked = checked,
+                onCheckedChange = onCheckedChange,
+                colors = iosSwitchColors()
             )
         }
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            colors = iosSwitchColors()
-        )
     }
 }
 

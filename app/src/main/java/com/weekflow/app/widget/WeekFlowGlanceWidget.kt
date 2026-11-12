@@ -97,7 +97,8 @@ class WeekFlowGlanceWidget : GlanceAppWidget() {
                     .addMigrations(
                         WeekFlowDatabase.MIGRATION_2_3,
                         WeekFlowDatabase.MIGRATION_3_4,
-                        WeekFlowDatabase.MIGRATION_4_5
+                        WeekFlowDatabase.MIGRATION_4_5,
+                        WeekFlowDatabase.MIGRATION_5_6
                     )
                     .addCallback(WeekFlowDatabase.DEFAULT_PRESET_CALLBACK)
                     .fallbackToDestructiveMigration()

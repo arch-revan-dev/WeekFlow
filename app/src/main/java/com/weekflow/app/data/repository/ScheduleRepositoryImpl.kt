@@ -196,7 +196,9 @@ class ScheduleRepositoryImpl(
                         note = task.note,
                         priority = task.priority,
                         subtasks = task.subtasks,
-                        presetId = targetPreset
+                        presetId = targetPreset,
+                        grade = task.grade,
+                        attachments = task.attachments
                     )
                 )
             }
@@ -499,7 +501,9 @@ class ScheduleRepositoryImpl(
                         note = task.note,
                         priority = task.priority,
                         subtasks = task.subtasks,
-                        presetId = targetPreset
+                        presetId = targetPreset,
+                        grade = task.grade,
+                        attachments = task.attachments
                     )
                 )
             }
@@ -576,7 +580,9 @@ class ScheduleRepositoryImpl(
                         note = task.note,
                         priority = task.priority,
                         subtasks = task.subtasks,
-                        presetId = targetPreset
+                        presetId = targetPreset,
+                        grade = task.grade,
+                        attachments = task.attachments
                     )
                 )
             }
@@ -654,7 +660,9 @@ class ScheduleRepositoryImpl(
                     isCompleted = domain.isCompleted,
                     note = domain.note,
                     priority = domain.priority,
-                    subtasks = domain.subtasks
+                    subtasks = domain.subtasks,
+                    grade = domain.grade,
+                    attachments = domain.attachments
                 )
             }
 

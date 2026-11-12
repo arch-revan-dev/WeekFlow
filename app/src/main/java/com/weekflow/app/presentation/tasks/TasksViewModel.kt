@@ -4,12 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.weekflow.app.core.notifications.NotificationScheduler
 import com.weekflow.app.domain.model.Activity
-import com.weekflow.app.domain.model.QuickReminder
-import com.weekflow.app.domain.model.RhythmReminder
+import com.weekflow.app.domain.model.RegularReminder
 import com.weekflow.app.domain.model.SchedulePreset
 import com.weekflow.app.domain.model.Slot
 import com.weekflow.app.domain.model.SubtaskItem
 import com.weekflow.app.domain.model.Task
+import com.weekflow.app.domain.model.TaskAttachment
 import com.weekflow.app.domain.model.TaskPriority
 import com.weekflow.app.domain.model.UserPreferences
 import com.weekflow.app.domain.repository.PreferencesRepository
@@ -313,6 +313,19 @@ class TasksViewModel(
         }
     }
 
+    fun updateTaskGrade(task: Task, grade: String?) {
+        val normalizedGrade = grade?.trim()?.takeIf { it.isNotEmpty() }
+        viewModelScope.launch {
+            scheduleRepository.upsertTask(task.copy(grade = normalizedGrade))
+        }
+    }
+
+    fun updateTaskAttachments(task: Task, attachments: List<TaskAttachment>) {
+        viewModelScope.launch {
+            scheduleRepository.upsertTask(task.copy(attachments = attachments))
+        }
+    }
+
     fun addQuickFollowUpTask(title: String, activityId: String?, presetId: String) {
         if (title.isBlank()) return
         viewModelScope.launch {
@@ -328,20 +341,11 @@ class TasksViewModel(
         }
     }
 
-    fun updateRhythmReminders(list: List<RhythmReminder>) {
+    fun updateRegularReminders(reminders: List<RegularReminder>) {
         viewModelScope.launch {
-            preferencesRepository.updateRhythmReminders(list)
+            preferencesRepository.updateRegularReminders(reminders)
             try {
-                notificationScheduler?.rescheduleAllNotifications()
-            } catch (_: Exception) {}
-        }
-    }
-
-    fun updateQuickReminders(list: List<QuickReminder>) {
-        viewModelScope.launch {
-            preferencesRepository.updateQuickReminders(list)
-            try {
-                notificationScheduler?.rescheduleAllNotifications()
+                notificationScheduler?.scheduleRegularReminders()
             } catch (_: Exception) {}
         }
     }

@@ -62,5 +62,7 @@ data class TaskDto(
     val isCompleted: Boolean = false,
     val note: String? = null,
     val priority: TaskPriority = TaskPriority.NONE,
-    val subtasks: List<SubtaskItem> = emptyList()
+    val subtasks: List<SubtaskItem> = emptyList(),
+    val grade: String? = null,
+    val attachments: List<TaskAttachment> = emptyList()
 )

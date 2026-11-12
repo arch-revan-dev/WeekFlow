@@ -29,20 +29,24 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.BeachAccess
 import androidx.compose.material.icons.rounded.Celebration
+import androidx.compose.material.icons.rounded.HourglassTop
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.MoreTime
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.QueryStats
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -66,18 +70,17 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.weekflow.app.core.designsystem.IosBlue
-import com.weekflow.app.core.designsystem.IosOrange
 import com.weekflow.app.core.designsystem.IosRed
 import com.weekflow.app.core.designsystem.LocalIosColors
 import com.weekflow.app.core.designsystem.components.FocusTimerDialog
-import com.weekflow.app.core.designsystem.components.InteractiveSessionPlayerSheet
 import com.weekflow.app.core.designsystem.components.IosSegmentedControl
 import com.weekflow.app.core.designsystem.components.LessonSlotCard
 import com.weekflow.app.core.designsystem.components.LiveLessonBanner
-import com.weekflow.app.core.designsystem.components.RhythmAndRemindersSheet
+import com.weekflow.app.core.designsystem.components.RegularRemindersSheet
 import com.weekflow.app.core.designsystem.components.TaskItemRow
 import com.weekflow.app.core.designsystem.components.UndoIncidentBanner
 import com.weekflow.app.core.designsystem.components.WeekStripHeader
+import com.weekflow.app.core.designsystem.components.WorkoutPlayerSheet
 import com.weekflow.app.core.localization.LocalAppProfile
 import com.weekflow.app.core.util.ColorParser
 import com.weekflow.app.core.util.DateTimeUtils
@@ -118,6 +121,7 @@ fun ScheduleScreen(
     var showPresetSheet by remember { mutableStateOf(false) }
     var showInsightsSheet by remember { mutableStateOf(false) }
     var showRhythmSheet by remember { mutableStateOf(false) }
+    var showOverflowMenu by remember { mutableStateOf(false) }
     var activeSessionSlotId by remember { mutableStateOf<String?>(null) }
 
     CompositionLocalProvider(LocalAppProfile provides appProfile) {
@@ -131,41 +135,36 @@ fun ScheduleScreen(
     }
 
     if (showRhythmSheet) {
-        RhythmAndRemindersSheet(
-            rhythmReminders = uiState.preferences.rhythmReminders,
-            quickReminders = uiState.preferences.quickReminders,
-            onUpdateRhythmReminders = { viewModel.updateRhythmReminders(it) },
-            onUpdateQuickReminders = { viewModel.updateQuickReminders(it) },
+        RegularRemindersSheet(
+            reminders = uiState.preferences.regularReminders,
+            onUpdateReminders = { viewModel.updateRegularReminders(it) },
             onDismiss = { showRhythmSheet = false }
         )
     }
 
-    activeSessionSlotId?.let { slotId ->
-        val liveSlot = uiState.allSlots.firstOrNull { it.id == slotId }
-        if (liveSlot != null) {
-            val act = uiState.allActivities.firstOrNull { it.id == liveSlot.activityTypeId }
-            InteractiveSessionPlayerSheet(
-                sessionTitle = act?.name ?: "Занятие",
-                sessionSubtitle = "${liveSlot.startTime} – ${liveSlot.endTime}" +
-                    (liveSlot.customLocation?.takeIf { it.isNotBlank() }?.let { " • $it" } ?: ""),
-                accentColor = ColorParser.parseHexColor(act?.colorHex ?: uiState.activePreset.colorHex),
-                initialItems = liveSlot.sessionItems,
-                onUpdateItems = { updatedItems ->
-                    viewModel.updateSlotSessionItems(liveSlot, updatedItems)
-                },
-                onAddFollowUpTask = { taskTitle ->
-                    viewModel.addQuickFollowUpTask(
-                        title = taskTitle,
-                        activityId = liveSlot.activityTypeId,
-                        presetId = uiState.activePreset.id
-                    )
-                },
-                onSessionCompleted = { mins -> viewModel.recordFocusSession(mins) },
-                onDismiss = { activeSessionSlotId = null }
-            )
-        } else {
-            activeSessionSlotId = null
+    if (appProfile.supportsWorkouts) {
+        activeSessionSlotId?.let { slotId ->
+            val liveSlot = uiState.allSlots.firstOrNull { it.id == slotId }
+            if (liveSlot != null) {
+                val act = uiState.allActivities.firstOrNull { it.id == liveSlot.activityTypeId }
+                WorkoutPlayerSheet(
+                    sessionTitle = act?.name ?: "Тренировка",
+                    sessionSubtitle = "${liveSlot.startTime} – ${liveSlot.endTime}" +
+                        (liveSlot.customLocation?.takeIf { it.isNotBlank() }?.let { " • $it" } ?: ""),
+                    accentColor = ColorParser.parseHexColor(act?.colorHex ?: uiState.activePreset.colorHex),
+                    initialItems = liveSlot.sessionItems,
+                    onUpdateItems = { updatedItems ->
+                        viewModel.updateSlotSessionItems(liveSlot, updatedItems)
+                    },
+                    onSessionCompleted = { mins -> viewModel.recordFocusSession(mins) },
+                    onDismiss = { activeSessionSlotId = null }
+                )
+            } else {
+                activeSessionSlotId = null
+            }
         }
+    } else if (activeSessionSlotId != null) {
+        activeSessionSlotId = null
     }
 
     if (showPresetSheet) {
@@ -271,7 +270,11 @@ fun ScheduleScreen(
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Text(
-                                text = "${DateTimeUtils.formatWeekRange(uiState.weekDays)} • $relativeWeek",
+                                text = if (isCurrentWeek) {
+                                    DateTimeUtils.formatWeekRange(uiState.weekDays)
+                                } else {
+                                    "${DateTimeUtils.formatWeekRange(uiState.weekDays)} • $relativeWeek"
+                                },
                                 fontSize = 11.5.sp,
                                 fontWeight = FontWeight.Medium,
                                 color = if (isCurrentWeek) iosColors.textSecondary else IosBlue,
@@ -317,15 +320,6 @@ fun ScheduleScreen(
                                     )
                                 }
                             }
-
-                            if (uiState.isPresetAutoScheduled) {
-                                Text(
-                                    text = "• авто",
-                                    fontSize = 10.5.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = presetColor
-                                )
-                            }
                         }
                     }
                 },
@@ -358,38 +352,71 @@ fun ScheduleScreen(
                         )
                     }
 
-                    IconButton(
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            showRhythmSheet = true
-                        },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        val hasActiveRhythm = uiState.preferences.rhythmReminders.any { it.isEnabled } ||
-                            uiState.preferences.quickReminders.any { it.triggerAtEpochMillis > System.currentTimeMillis() }
-                        Box(contentAlignment = Alignment.Center) {
+                    Box {
+                        IconButton(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                showOverflowMenu = true
+                            },
+                            modifier = Modifier.size(32.dp)
+                        ) {
                             Icon(
-                                imageVector = Icons.Rounded.Notifications,
-                                contentDescription = "Ритм дня и напоминания",
-                                tint = if (hasActiveRhythm) IosOrange else IosBlue,
+                                imageVector = Icons.Rounded.MoreVert,
+                                contentDescription = "Ещё",
+                                tint = IosBlue,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
-                    }
 
-                    IconButton(
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            showInsightsSheet = true
-                        },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.QueryStats,
-                            contentDescription = "Аналитика недели",
-                            tint = IosBlue,
-                            modifier = Modifier.size(20.dp)
-                        )
+                        DropdownMenu(
+                            expanded = showOverflowMenu,
+                            onDismissRequest = { showOverflowMenu = false },
+                            containerColor = iosColors.card
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Регулярные напоминания", color = iosColors.textPrimary) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Notifications,
+                                        contentDescription = null,
+                                        tint = IosBlue
+                                    )
+                                },
+                                onClick = {
+                                    showOverflowMenu = false
+                                    showRhythmSheet = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Аналитика недели", color = iosColors.textPrimary) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Rounded.QueryStats,
+                                        contentDescription = null,
+                                        tint = IosBlue
+                                    )
+                                },
+                                onClick = {
+                                    showOverflowMenu = false
+                                    showInsightsSheet = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Фокус-таймер", color = iosColors.textPrimary) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Rounded.HourglassTop,
+                                        contentDescription = null,
+                                        tint = IosBlue
+                                    )
+                                },
+                                onClick = {
+                                    showOverflowMenu = false
+                                    focusTimerTitle = "Фокус"
+                                    focusTimerMinutes = 25
+                                }
+                            )
+                        }
                     }
 
                     IconButton(
@@ -458,15 +485,17 @@ fun ScheduleScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "На эту дату назначен пресет: ${scheduledForDate.iconEmoji} ${scheduledForDate.name}",
-                            fontSize = 11.5.sp,
+                            text = "${scheduledForDate.iconEmoji} ${scheduledForDate.name}",
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Medium,
                             color = iosColors.textPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
                         )
                         Text(
                             text = "Включить",
-                            fontSize = 11.5.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = schedColor
                         )
@@ -480,7 +509,7 @@ fun ScheduleScreen(
                     .padding(horizontal = 16.dp, vertical = 4.dp)
             ) {
                 IosSegmentedControl(
-                    items = listOf("День", "Таблица (Weeklie)", "Сетка"),
+                    items = listOf("День", "Таблица", "Сетка"),
                     selectedIndex = when (uiState.preferences.scheduleViewMode) {
                         ScheduleViewMode.DAY_LIST -> 0
                         ScheduleViewMode.WEEK_TABLE_GRID -> 1
@@ -604,7 +633,7 @@ fun ScheduleScreen(
                         if (daySchedule != null && daySchedule.holidayOrVacationTitle != null) {
                             item(key = "holiday_banner") {
                                 val isHoliday = daySchedule.isHoliday
-                                val bannerColor = if (isHoliday) IosRed else IosOrange
+                                val bannerColor = if (isHoliday) IosRed else IosBlue
                                 val icon = if (isHoliday) Icons.Rounded.Celebration else Icons.Rounded.BeachAccess
 
                                 Box(
@@ -702,8 +731,10 @@ fun ScheduleScreen(
                                                 focusTimerTitle = item.details.activity.name
                                                 focusTimerMinutes = 45
                                             },
-                                            onStartInteractiveSession = {
-                                                activeSessionSlotId = item.details.slot.id
+                                            onStartInteractiveSession = if (appProfile.supportsWorkouts) {
+                                                { activeSessionSlotId = item.details.slot.id }
+                                            } else {
+                                                null
                                             }
                                         )
                                     }
@@ -840,7 +871,7 @@ fun BreakWindowCard(
                 modifier = Modifier.size(13.dp)
             )
             Text(
-                text = "Перерыв ${DateTimeUtils.formatMinutesDuration(breakWindow.durationMinutes)} (${breakWindow.startTime} – ${breakWindow.endTime})",
+                text = "Перерыв ${DateTimeUtils.formatMinutesDuration(breakWindow.durationMinutes)}",
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
                 color = iosColors.textSecondary
@@ -954,50 +985,47 @@ fun EmptyDayScheduleCard(
         Spacer(modifier = Modifier.height(16.dp))
 
         Text(
-            text = "Свободный день!",
-            fontSize = 18.sp,
+            text = "Свободный день",
+            fontSize = 17.sp,
             fontWeight = FontWeight.Bold,
             color = iosColors.textPrimary
         )
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
         Text(
-            text = "На этот день нет запланированных $appProfileTitle",
-            fontSize = 14.sp,
+            text = "Нет $appProfileTitle",
+            fontSize = 13.5.sp,
             color = iosColors.textSecondary
         )
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(12.dp))
                     .background(IosBlue)
                     .clickable { onAddLessonClick() }
-                    .padding(horizontal = 16.dp, vertical = 10.dp)
+                    .padding(horizontal = 16.dp, vertical = 9.dp)
             ) {
                 Text(
-                    text = "+ Добавить занятие",
+                    text = "+ Добавить",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Color.White
                 )
             }
 
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(iosColors.cardSecondary)
-                    .clickable { onAddEventClick() }
-                    .padding(horizontal = 16.dp, vertical = 10.dp)
-            ) {
+            TextButton(onClick = onAddEventClick) {
                 Text(
                     text = "+ Событие",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = iosColors.textPrimary
+                    color = IosBlue
                 )
             }
         }

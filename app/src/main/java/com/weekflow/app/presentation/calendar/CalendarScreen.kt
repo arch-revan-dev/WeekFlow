@@ -39,7 +39,6 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Celebration
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -68,13 +67,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.weekflow.app.core.designsystem.IosBlue
-import com.weekflow.app.core.designsystem.IosOrange
 import com.weekflow.app.core.designsystem.IosRed
 import com.weekflow.app.core.designsystem.LocalIosColors
 import com.weekflow.app.core.designsystem.components.FocusTimerDialog
-import com.weekflow.app.core.designsystem.components.InteractiveSessionPlayerSheet
 import com.weekflow.app.core.designsystem.components.LessonSlotCard
 import com.weekflow.app.core.designsystem.components.TaskItemRow
+import com.weekflow.app.core.designsystem.components.WorkoutPlayerSheet
 import com.weekflow.app.core.localization.LocalAppProfile
 import com.weekflow.app.core.util.ColorParser
 import com.weekflow.app.core.util.DateTimeUtils
@@ -143,33 +141,30 @@ fun CalendarScreen(
     }
 
     CompositionLocalProvider(LocalAppProfile provides appProfile) {
-    activeSessionSlotId?.let { slotId ->
-        val details = uiState.selectedDaySchedule?.timelineItems
-            ?.filterIsInstance<ScheduleTimelineItem.Lesson>()
-            ?.firstOrNull { it.details.slot.id == slotId }?.details
-        if (details != null) {
-            InteractiveSessionPlayerSheet(
-                sessionTitle = details.activity.name,
-                sessionSubtitle = "${details.slot.startTime} – ${details.slot.endTime}" +
-                    (details.slot.customLocation?.takeIf { it.isNotBlank() }?.let { " • $it" } ?: ""),
-                accentColor = ColorParser.parseHexColor(details.activity.colorHex),
-                initialItems = details.slot.sessionItems,
-                onUpdateItems = { updatedItems ->
-                    viewModel.updateSlotSessionItems(details.slot, updatedItems)
-                },
-                onAddFollowUpTask = { taskTitle ->
-                    viewModel.addQuickFollowUpTask(
-                        title = taskTitle,
-                        activityId = details.activity.id,
-                        presetId = uiState.activePreset.id
-                    )
-                },
-                onSessionCompleted = { mins -> viewModel.recordFocusSession(mins) },
-                onDismiss = { activeSessionSlotId = null }
-            )
-        } else {
-            activeSessionSlotId = null
+    if (appProfile.supportsWorkouts) {
+        activeSessionSlotId?.let { slotId ->
+            val details = uiState.selectedDaySchedule?.timelineItems
+                ?.filterIsInstance<ScheduleTimelineItem.Lesson>()
+                ?.firstOrNull { it.details.slot.id == slotId }?.details
+            if (details != null) {
+                WorkoutPlayerSheet(
+                    sessionTitle = details.activity.name,
+                    sessionSubtitle = "${details.slot.startTime} – ${details.slot.endTime}" +
+                        (details.slot.customLocation?.takeIf { it.isNotBlank() }?.let { " • $it" } ?: ""),
+                    accentColor = ColorParser.parseHexColor(details.activity.colorHex),
+                    initialItems = details.slot.sessionItems,
+                    onUpdateItems = { updatedItems ->
+                        viewModel.updateSlotSessionItems(details.slot, updatedItems)
+                    },
+                    onSessionCompleted = { mins -> viewModel.recordFocusSession(mins) },
+                    onDismiss = { activeSessionSlotId = null }
+                )
+            } else {
+                activeSessionSlotId = null
+            }
         }
+    } else if (activeSessionSlotId != null) {
+        activeSessionSlotId = null
     }
 
     Scaffold(
@@ -232,34 +227,23 @@ fun CalendarScreen(
                         }
 
                         if (uiState.selectedDate != LocalDate.now() || uiState.currentYearMonth != YearMonth.now()) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                modifier = Modifier.padding(top = 2.dp)
+                            Box(
+                                modifier = Modifier
+                                    .padding(top = 3.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(IosBlue.copy(alpha = 0.14f))
+                                    .clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        viewModel.goToToday()
+                                    }
+                                    .padding(horizontal = 7.dp, vertical = 2.dp)
                             ) {
                                 Text(
-                                    text = "Выбрано: ${DateTimeUtils.formatDateWithDay(uiState.selectedDate)}",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = iosColors.textSecondary
+                                    text = "Сегодня",
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = IosBlue
                                 )
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(IosBlue.copy(alpha = 0.14f))
-                                        .clickable {
-                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            viewModel.goToToday()
-                                        }
-                                        .padding(horizontal = 6.dp, vertical = 1.5.dp)
-                                ) {
-                                    Text(
-                                        text = "Сегодня",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = IosBlue
-                                    )
-                                }
                             }
                         }
                     }
@@ -461,12 +445,6 @@ fun CalendarScreen(
                             .clip(RoundedCornerShape(2.dp))
                             .background(iosColors.textSecondary.copy(alpha = 0.45f))
                     )
-                    Text(
-                        text = if (isMonthExpanded) "Неделя" else "Весь месяц",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = iosColors.textSecondary
-                    )
                     Icon(
                         imageVector = Icons.Rounded.KeyboardArrowDown,
                         contentDescription = null,
@@ -534,21 +512,6 @@ fun CalendarScreen(
                                 text = DateTimeUtils.formatDateWithDay(uiState.selectedDate),
                                 fontSize = 13.sp,
                                 color = iosColors.textSecondary
-                            )
-                        }
-
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(IosBlue.copy(alpha = 0.12f))
-                                .clickable { onAddNewEvent(uiState.selectedDate.toString()) }
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = "+ Событие",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = IosBlue
                             )
                         }
                     }
@@ -625,7 +588,11 @@ fun CalendarScreen(
                                     onTaskToggle = { task -> viewModel.toggleTask(task) },
                                     onTaskClick = { task -> onEditTask(task) },
                                     onStartFocusTimer = { focusTimerTitle = item.details.activity.name },
-                                    onStartInteractiveSession = { activeSessionSlotId = item.details.slot.id }
+                                    onStartInteractiveSession = if (appProfile.supportsWorkouts) {
+                                        { activeSessionSlotId = item.details.slot.id }
+                                    } else {
+                                        null
+                                    }
                                 )
                             }
                             is ScheduleTimelineItem.BreakWindow -> {
@@ -746,11 +713,10 @@ fun CalendarDayCell(
                 val isOverdueDay = day.date.isBefore(LocalDate.now())
                 val badgeBg = when {
                     isOverdueDay -> IosRed
-                    day.isToday -> IosOrange
                     isSelected -> Color.White
                     else -> IosBlue
                 }
-                val badgeTextColor = if (isSelected && !isOverdueDay && !day.isToday) IosBlue else Color.White
+                val badgeTextColor = if (isSelected && !isOverdueDay) IosBlue else Color.White
 
                 Box(
                     modifier = Modifier
@@ -779,7 +745,7 @@ fun CalendarDayCell(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.height(4.dp)
         ) {
-            day.dotColorsHex.take(4).forEach { hex ->
+            day.dotColorsHex.take(3).forEach { hex ->
                 val dotColor = ColorParser.parseHexColor(hex)
                 Box(
                     modifier = Modifier

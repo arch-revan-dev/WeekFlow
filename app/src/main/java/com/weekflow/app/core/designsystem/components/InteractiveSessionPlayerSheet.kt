@@ -9,8 +9,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,7 +19,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
@@ -29,19 +26,19 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
-import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.SkipNext
-import androidx.compose.material.icons.rounded.Timer
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -50,6 +47,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,41 +61,170 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.weekflow.app.core.designsystem.IosBlue
-import com.weekflow.app.core.designsystem.IosGreen
-import com.weekflow.app.core.designsystem.IosOrange
-import com.weekflow.app.core.designsystem.IosPurple
-import com.weekflow.app.core.designsystem.IosRed
-import com.weekflow.app.core.localization.LocalAppProfile
 import com.weekflow.app.core.designsystem.LocalIosColors
-import com.weekflow.app.domain.model.AppProfile
+import com.weekflow.app.core.designsystem.iosPrimaryButtonColors
 import com.weekflow.app.domain.model.SubtaskItem
 import kotlinx.coroutines.delay
+import kotlin.math.abs
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+private enum class WorkoutPhase {
+    IDLE,
+    WORK,
+    REST,
+    FINISHED
+}
+
+private fun pluralizeRu(count: Int, one: String, few: String, many: String): String {
+    val absCount = abs(count)
+    val mod100 = absCount % 100
+    val mod10 = absCount % 10
+    val word = when {
+        mod100 in 11..14 -> many
+        mod10 == 1 -> one
+        mod10 in 2..4 -> few
+        else -> many
+    }
+    return "$count $word"
+}
+
+private fun formatDurationRu(totalSeconds: Int): String {
+    val mins = totalSeconds / 60
+    val secs = totalSeconds % 60
+    return when {
+        mins > 0 && secs > 0 -> "$mins мин $secs сек"
+        mins > 0 -> "$mins мин"
+        else -> "$secs сек"
+    }
+}
+
+private fun formatClock(totalSeconds: Int): String {
+    val safe = totalSeconds.coerceAtLeast(0)
+    return String.format("%02d:%02d", safe / 60, safe % 60)
+}
+
+private fun formatExerciseMeta(item: SubtaskItem): String {
+    val parts = mutableListOf<String>()
+    val sets = item.sets ?: 0
+    if (sets > 0) {
+        if (!item.reps.isNullOrBlank()) {
+            parts.add("$sets × ${item.reps}")
+        } else {
+            parts.add(pluralizeRu(sets, "подход", "подхода", "подходов"))
+        }
+    } else if (!item.reps.isNullOrBlank()) {
+        parts.add(item.reps)
+    }
+    if ((item.durationSeconds ?: 0) > 0) {
+        parts.add("работа ${formatDurationRu(item.durationSeconds!!)}")
+    }
+    if ((item.restSeconds ?: 0) > 0) {
+        parts.add("отдых ${formatDurationRu(item.restSeconds!!)}")
+    }
+    return parts.joinToString(" • ")
+}
+
 @Composable
-fun InteractiveSessionPlayerSheet(
+private fun TimeWheelPairCard(
+    title: String,
+    minutes: Int,
+    seconds: Int,
+    minuteOptions: List<Int>,
+    secondOptions: List<Int>,
+    zeroBadgeText: String,
+    accentColor: Color,
+    onMinutesSelected: (Int) -> Unit,
+    onSecondsSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val iosColors = LocalIosColors.current
+    val totalSec = minutes * 60 + seconds
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(iosColors.card)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = title,
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = iosColors.textSecondary
+            )
+            Text(
+                text = if (totalSec > 0) formatClock(totalSec) else zeroBadgeText,
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (totalSec > 0) accentColor else iosColors.textSecondary
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            val minIdx = minuteOptions.indexOf(minutes).coerceAtLeast(0)
+            val secIdx = secondOptions.indices.minByOrNull { abs(secondOptions[it] - seconds) } ?: 0
+            IosWheelPicker(
+                items = minuteOptions,
+                selectedIndex = minIdx,
+                onItemSelected = { _, m -> onMinutesSelected(m) },
+                itemLabel = { m -> String.format("%02d", m) },
+                visibleItemsCount = 3,
+                itemHeight = 34.dp,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = ":",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = iosColors.textPrimary
+            )
+            IosWheelPicker(
+                items = secondOptions,
+                selectedIndex = secIdx,
+                onItemSelected = { _, s -> onSecondsSelected(s) },
+                itemLabel = { s -> String.format("%02d", s) },
+                visibleItemsCount = 3,
+                itemHeight = 34.dp,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceAround
+        ) {
+            Text("мин", fontSize = 10.5.sp, color = iosColors.textSecondary)
+            Text("сек", fontSize = 10.5.sp, color = iosColors.textSecondary)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun WorkoutPlayerSheet(
     sessionTitle: String,
     sessionSubtitle: String,
     accentColor: Color,
     initialItems: List<SubtaskItem>,
     onUpdateItems: (List<SubtaskItem>) -> Unit,
-    onAddFollowUpTask: ((String) -> Unit)? = null,
     onSessionCompleted: ((Int) -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val iosColors = LocalIosColors.current
-    val appProfile = LocalAppProfile.current
     val haptic = LocalHapticFeedback.current
     val currentView = LocalView.current
 
-    // Keep screen awake during interactive workout / session
     DisposableEffect(Unit) {
         val prevKeepScreenOn = currentView.keepScreenOn
         currentView.keepScreenOn = true
@@ -106,62 +233,201 @@ fun InteractiveSessionPlayerSheet(
         }
     }
 
+    val setOptions = remember { (1..20).toList() }
+    val repOptions = remember { (0..100).toList() }
+    val workMinuteOptions = remember { (0..30).toList() }
+    val restMinuteOptions = remember { (0..15).toList() }
+    val secondOptions = remember { (0..55 step 5).toList() }
+
     var items by remember(initialItems) { mutableStateOf(initialItems) }
+    var phase by remember { mutableStateOf(WorkoutPhase.IDLE) }
     var activeIndex by remember {
         mutableIntStateOf(initialItems.indexOfFirst { !it.isDone }.coerceAtLeast(0))
     }
+    var currentSet by remember { mutableIntStateOf(1) }
+    var isPaused by remember { mutableStateOf(false) }
 
-    val activeItem = items.getOrNull(activeIndex)
+    // WORK timer state: countdown when workTotalSec > 0, manual stopwatch otherwise
+    var workTotalSec by remember { mutableIntStateOf(0) }
+    var workRemainingSec by remember { mutableIntStateOf(0) }
+    var workElapsedSec by remember { mutableIntStateOf(0) }
 
-    // Step Timer / Rest Timer state
-    var isRestMode by remember(activeIndex) { mutableStateOf(false) }
-    var isTimerRunning by remember(activeIndex) { mutableStateOf(false) }
-    val defaultStepSec = (activeItem?.durationSeconds ?: 0).coerceAtLeast(0)
-    var totalTimerSeconds by remember(activeIndex, activeItem?.durationSeconds) {
-        mutableIntStateOf(if (defaultStepSec > 0) defaultStepSec else 60)
-    }
-    var remainingSeconds by remember(activeIndex, activeItem?.durationSeconds) {
-        mutableIntStateOf(if (defaultStepSec > 0) defaultStepSec else 60)
-    }
-    var elapsedSessionSeconds by remember { mutableIntStateOf(0) }
+    // REST timer state
+    var restTotalSec by remember { mutableIntStateOf(0) }
+    var restRemainingSec by remember { mutableIntStateOf(0) }
+    var pendingNextIndex by remember { mutableIntStateOf(0) }
+    var pendingNextSet by remember { mutableIntStateOf(1) }
 
-    // Custom step builder state
-    var showAddStepForm by remember { mutableStateOf(items.isEmpty()) }
-    var newStepTitle by remember { mutableStateOf("") }
-    var newStepSets by remember { mutableStateOf(if (appProfile == AppProfile.HEALTH) "3" else "") }
-    var newStepReps by remember { mutableStateOf(if (appProfile == AppProfile.HEALTH) "12 повт" else "") }
-    var newStepDurationSec by remember { mutableStateOf("") }
-    var newStepRestSec by remember { mutableStateOf(if (appProfile == AppProfile.HEALTH) "60" else "") }
-    var newStepNote by remember { mutableStateOf("") }
+    var totalElapsedSeconds by remember { mutableIntStateOf(0) }
 
-    var followUpText by remember { mutableStateOf("") }
-    var showCustomTimerWheel by remember { mutableStateOf(false) }
+    // Inline "+ Упражнение" / Edit exercise form state
+    var showExerciseForm by remember { mutableStateOf(items.isEmpty()) }
+    var editingExerciseId by remember { mutableStateOf<String?>(null) }
+    var formTitle by remember { mutableStateOf("") }
+    var formSets by remember { mutableIntStateOf(3) }
+    var formReps by remember { mutableIntStateOf(0) }
+    var formWorkMin by remember { mutableIntStateOf(0) }
+    var formWorkSec by remember { mutableIntStateOf(0) }
+    var formRestMin by remember { mutableIntStateOf(1) }
+    var formRestSec by remember { mutableIntStateOf(0) }
 
-    // 1-second ticker for active exercise timer or rest timer
-    LaunchedEffect(isTimerRunning, remainingSeconds, isRestMode) {
-        if (isTimerRunning && remainingSeconds > 0) {
-            delay(1_000L)
-            remainingSeconds -= 1
-            elapsedSessionSeconds += 1
-            if (remainingSeconds == 0) {
-                isTimerRunning = false
-                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                if (isRestMode) {
-                    isRestMode = false
-                    val nextDur = activeItem?.durationSeconds ?: 0
-                    if (nextDur > 0) {
-                        totalTimerSeconds = nextDur
-                        remainingSeconds = nextDur
-                    }
-                }
-            }
-        }
+    fun parseRepsInt(reps: String?): Int {
+        if (reps.isNullOrBlank()) return 0
+        val value = Regex("\\d+").find(reps)?.value?.toIntOrNull() ?: return 0
+        return value.coerceIn(0, 100)
     }
 
-    fun updateAndPersist(updated: List<SubtaskItem>) {
+    fun openAddForm() {
+        editingExerciseId = null
+        formTitle = ""
+        formSets = 3
+        formReps = 0
+        formWorkMin = 0
+        formWorkSec = 0
+        formRestMin = 1
+        formRestSec = 0
+        showExerciseForm = true
+    }
+
+    fun openEditForm(item: SubtaskItem) {
+        editingExerciseId = item.id
+        formTitle = item.title
+        formSets = (item.sets ?: 3).coerceIn(1, 20)
+        formReps = parseRepsInt(item.reps)
+        val work = (item.durationSeconds ?: 0).coerceAtLeast(0)
+        formWorkMin = (work / 60).coerceIn(0, 30)
+        formWorkSec = ((work % 60 + 2) / 5 * 5).coerceIn(0, 55)
+        val rest = (item.restSeconds ?: 0).coerceAtLeast(0)
+        formRestMin = (rest / 60).coerceIn(0, 15)
+        formRestSec = ((rest % 60 + 2) / 5 * 5).coerceIn(0, 55)
+        showExerciseForm = true
+    }
+
+    fun closeForm() {
+        showExerciseForm = false
+        editingExerciseId = null
+    }
+
+    fun persistItems(updated: List<SubtaskItem>) {
         items = updated
         onUpdateItems(updated)
     }
+
+    fun startWorkAt(index: Int, setNumber: Int, sourceList: List<SubtaskItem>) {
+        val target = sourceList.getOrNull(index) ?: return
+        activeIndex = index
+        currentSet = setNumber
+        val dur = (target.durationSeconds ?: 0).coerceAtLeast(0)
+        workTotalSec = dur
+        workRemainingSec = dur
+        workElapsedSec = 0
+        isPaused = false
+        phase = WorkoutPhase.WORK
+    }
+
+    fun startWorkout() {
+        if (items.isEmpty()) return
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        if (items.all { it.isDone }) {
+            val resetList = items.map { it.copy(isDone = false, completedSets = 0) }
+            persistItems(resetList)
+            startWorkAt(0, 1, resetList)
+        } else {
+            val firstIdx = items.indexOfFirst { !it.isDone }.coerceAtLeast(0)
+            val firstItem = items[firstIdx]
+            val targetSets = (firstItem.sets ?: 1).coerceAtLeast(1)
+            val nextSet = (firstItem.completedSets + 1).coerceIn(1, targetSets)
+            startWorkAt(firstIdx, nextSet, items)
+        }
+    }
+
+    fun completeCurrentApproach() {
+        val current = items.getOrNull(activeIndex) ?: return
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+
+        val targetSets = (current.sets ?: 1).coerceAtLeast(1)
+        val doneSets = currentSet.coerceIn(1, targetSets)
+        val exerciseDone = doneSets >= targetSets
+
+        val updated = items.toMutableList().apply {
+            this[activeIndex] = current.copy(
+                completedSets = doneSets,
+                isDone = exerciseDone
+            )
+        }
+        persistItems(updated)
+
+        val nextIdx: Int
+        val nextSet: Int
+        if (!exerciseDone) {
+            nextIdx = activeIndex
+            nextSet = doneSets + 1
+        } else {
+            val foundNext = (activeIndex + 1 until updated.size).firstOrNull { !updated[it].isDone }
+                ?: updated.indexOfFirst { !it.isDone }
+            if (foundNext < 0) {
+                isPaused = false
+                phase = WorkoutPhase.FINISHED
+                onSessionCompleted?.invoke((totalElapsedSeconds / 60).coerceAtLeast(1))
+                return
+            }
+            nextIdx = foundNext
+            val nextTargetSets = (updated[nextIdx].sets ?: 1).coerceAtLeast(1)
+            nextSet = (updated[nextIdx].completedSets + 1).coerceIn(1, nextTargetSets)
+        }
+
+        val restSec = (current.restSeconds ?: 0).coerceAtLeast(0)
+        if (restSec > 0) {
+            pendingNextIndex = nextIdx
+            pendingNextSet = nextSet
+            restTotalSec = restSec
+            restRemainingSec = restSec
+            isPaused = false
+            phase = WorkoutPhase.REST
+        } else {
+            startWorkAt(nextIdx, nextSet, updated)
+        }
+    }
+
+    fun skipRest() {
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        startWorkAt(pendingNextIndex, pendingNextSet, items)
+    }
+
+    // 1-second state machine ticker
+    LaunchedEffect(phase, isPaused, workRemainingSec, workElapsedSec, restRemainingSec) {
+        if (isPaused) return@LaunchedEffect
+        when (phase) {
+            WorkoutPhase.WORK -> {
+                delay(1_000L)
+                totalElapsedSeconds += 1
+                if (workTotalSec > 0) {
+                    if (workRemainingSec > 1) {
+                        workRemainingSec -= 1
+                    } else {
+                        workRemainingSec = 0
+                        completeCurrentApproach()
+                    }
+                } else {
+                    workElapsedSec += 1
+                }
+            }
+            WorkoutPhase.REST -> {
+                delay(1_000L)
+                totalElapsedSeconds += 1
+                if (restRemainingSec > 1) {
+                    restRemainingSec -= 1
+                } else {
+                    restRemainingSec = 0
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    startWorkAt(pendingNextIndex, pendingNextSet, items)
+                }
+            }
+            else -> Unit
+        }
+    }
+
+    val activeItem = items.getOrNull(activeIndex)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -176,53 +442,31 @@ fun InteractiveSessionPlayerSheet(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Top Header
+            // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(accentColor.copy(alpha = 0.16f))
-                                .padding(horizontal = 7.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = appProfile.title,
-                                fontSize = 10.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = accentColor
-                            )
-                        }
-                        val doneCount = items.count { it.isDone }
-                        if (items.isNotEmpty()) {
-                            Text(
-                                text = "Выполнено $doneCount из ${items.size}",
-                                fontSize = 11.5.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = iosColors.textSecondary
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(3.dp))
                     Text(
                         text = sessionTitle,
-                        fontSize = 19.sp,
+                        fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = iosColors.textPrimary,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
-                    if (sessionSubtitle.isNotBlank()) {
+                    val subtitleParts = buildList {
+                        if (sessionSubtitle.isNotBlank()) add(sessionSubtitle)
+                        if (items.isNotEmpty()) {
+                            add("${items.count { it.isDone }}/${items.size}")
+                        }
+                    }
+                    if (subtitleParts.isNotEmpty()) {
                         Text(
-                            text = sessionSubtitle,
-                            fontSize = 12.sp,
+                            text = subtitleParts.joinToString(" • "),
+                            fontSize = 12.5.sp,
                             color = iosColors.textSecondary
                         )
                     }
@@ -236,567 +480,671 @@ fun InteractiveSessionPlayerSheet(
                 }
             }
 
-            // Active Exercise / Step Interactive Stage Card
-            if (activeItem != null) {
-                val targetSets = (activeItem.sets ?: 1).coerceAtLeast(1)
-                val currentSetNumber = (activeItem.completedSets + 1).coerceAtMost(targetSets)
-                val progress = if (totalTimerSeconds > 0) {
-                    remainingSeconds.toFloat() / totalTimerSeconds.toFloat()
-                } else 0f
-                val animatedProgress by animateFloatAsState(targetValue = progress, label = "StepTimerProgress")
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(
-                            if (isRestMode) IosOrange.copy(alpha = 0.12f)
-                            else accentColor.copy(alpha = 0.10f)
-                        )
-                        .border(
-                            BorderStroke(
-                                1.5.dp,
-                                if (isRestMode) IosOrange.copy(alpha = 0.55f) else accentColor.copy(alpha = 0.45f)
-                            ),
-                            RoundedCornerShape(18.dp)
-                        )
-                        .padding(16.dp)
-                ) {
+            // State Machine Stage Card
+            when (phase) {
+                WorkoutPhase.IDLE -> {
                     Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(iosColors.cardSecondary)
+                            .border(BorderStroke(1.dp, accentColor.copy(alpha = 0.30f)), RoundedCornerShape(16.dp))
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        // Top badge row: Step index & Sets badge
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (isRestMode) IosOrange else accentColor)
-                                    .padding(horizontal = 9.dp, vertical = 3.5.dp)
+                        if (items.isEmpty()) {
+                            Text(
+                                text = "Добавьте упражнения ниже",
+                                fontSize = 14.sp,
+                                color = iosColors.textSecondary
+                            )
+                        } else {
+                            val totalSetsCount = items.sumOf { (it.sets ?: 1).coerceAtLeast(1) }
+                            val exLabel = pluralizeRu(items.size, "упражнение", "упражнения", "упражнений")
+                            val setsLabel = pluralizeRu(totalSetsCount, "подход", "подхода", "подходов")
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = if (isRestMode) {
-                                        "⏸ ОТДЫХ МЕЖДУ ПОДХОДАМИ"
-                                    } else if ((activeItem.sets ?: 0) > 1) {
-                                        "ПОДХОД $currentSetNumber ИЗ $targetSets"
-                                    } else {
-                                        "${appProfile.sessionItemTerm.uppercase()} ${activeIndex + 1}/${items.size}"
-                                    },
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
+                                    text = "$exLabel • $setsLabel",
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = iosColors.textPrimary
+                                )
+                                if (totalElapsedSeconds > 0) {
+                                    Text(
+                                        text = formatClock(totalElapsedSeconds),
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = accentColor
+                                    )
+                                }
+                            }
+                            Button(
+                                onClick = ::startWorkout,
+                                shape = RoundedCornerShape(12.dp),
+                                colors = iosPrimaryButtonColors(accentColor),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.PlayArrow,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (items.all { it.isDone }) "Начать заново" else "Старт тренировки",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
+                        }
+                    }
+                }
 
-                            if (!activeItem.reps.isNullOrBlank()) {
+                WorkoutPhase.WORK -> {
+                    if (activeItem != null) {
+                        val targetSets = (activeItem.sets ?: 1).coerceAtLeast(1)
+                        val isCountdown = workTotalSec > 0
+                        val progressTarget = if (isCountdown) {
+                            workRemainingSec.toFloat() / workTotalSec.toFloat()
+                        } else 1f
+                        val animatedProgress by animateFloatAsState(
+                            targetValue = progressTarget,
+                            label = "WorkProgress"
+                        )
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(accentColor.copy(alpha = 0.09f))
+                                .border(BorderStroke(1.2.dp, accentColor.copy(alpha = 0.45f)), RoundedCornerShape(16.dp))
+                                .padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Box(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(8.dp))
-                                        .background(iosColors.card)
-                                        .padding(horizontal = 9.dp, vertical = 3.5.dp)
+                                        .background(accentColor)
+                                        .padding(horizontal = 9.dp, vertical = 4.dp)
                                 ) {
                                     Text(
-                                        text = "🎯 ${activeItem.reps}",
-                                        fontSize = 12.sp,
+                                        text = "Подход $currentSet из $targetSets",
+                                        fontSize = 11.5.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = iosColors.textPrimary
+                                        color = Color.White
+                                    )
+                                }
+                                Text(
+                                    text = "${activeIndex + 1}/${items.size}",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = iosColors.textSecondary
+                                )
+                            }
+
+                            Text(
+                                text = activeItem.title,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = iosColors.textPrimary,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+
+                            if (!activeItem.reps.isNullOrBlank()) {
+                                Text(
+                                    text = activeItem.reps,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = accentColor
+                                )
+                            }
+
+                            if (targetSets > 1) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    for (s in 1..targetSets) {
+                                        val isDoneSet = s < currentSet
+                                        val isNow = s == currentSet
+                                        Box(
+                                            modifier = Modifier
+                                                .size(24.dp)
+                                                .clip(CircleShape)
+                                                .background(
+                                                    when {
+                                                        isDoneSet -> accentColor
+                                                        isNow -> accentColor.copy(alpha = 0.20f)
+                                                        else -> iosColors.card
+                                                    }
+                                                )
+                                                .border(
+                                                    width = if (isNow) 1.5.dp else 1.dp,
+                                                    color = if (isDoneSet || isNow) accentColor else iosColors.separator,
+                                                    shape = CircleShape
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (isDoneSet) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Check,
+                                                    contentDescription = null,
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                            } else {
+                                                Text(
+                                                    text = s.toString(),
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isNow) accentColor else iosColors.textSecondary
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier.size(96.dp)
+                            ) {
+                                CircularProgressIndicator(
+                                    progress = { 1f },
+                                    modifier = Modifier.size(96.dp),
+                                    color = iosColors.separator.copy(alpha = 0.35f),
+                                    strokeWidth = 6.dp
+                                )
+                                CircularProgressIndicator(
+                                    progress = { animatedProgress },
+                                    modifier = Modifier.size(96.dp),
+                                    color = if (isPaused) accentColor.copy(alpha = 0.45f) else accentColor,
+                                    strokeWidth = 6.dp,
+                                    strokeCap = StrokeCap.Round
+                                )
+                                Text(
+                                    text = formatClock(if (isCountdown) workRemainingSec else workElapsedSec),
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = iosColors.textPrimary
+                                )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        isPaused = !isPaused
+                                    },
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, accentColor.copy(alpha = 0.5f)),
+                                    modifier = Modifier.height(46.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (isPaused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
+                                        contentDescription = null,
+                                        tint = accentColor,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = if (isPaused) "Старт" else "Пауза",
+                                        fontSize = 13.5.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = accentColor
+                                    )
+                                }
+
+                                Button(
+                                    onClick = ::completeCurrentApproach,
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = iosPrimaryButtonColors(accentColor),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(46.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Stop,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(17.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(5.dp))
+                                    Text(
+                                        text = "Закончить подход",
+                                        fontSize = 13.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
                         }
+                    }
+                }
 
-                        // Active Step Title
-                        Text(
-                            text = if (isRestMode) "Восстановление дыхания • След.: ${activeItem.title}" else activeItem.title,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = iosColors.textPrimary
-                        )
+                WorkoutPhase.REST -> {
+                    val nextExercise = items.getOrNull(pendingNextIndex)
+                    val nextTargetSets = (nextExercise?.sets ?: 1).coerceAtLeast(1)
+                    val restProgressTarget = if (restTotalSec > 0) {
+                        restRemainingSec.toFloat() / restTotalSec.toFloat()
+                    } else 0f
+                    val animatedRestProgress by animateFloatAsState(
+                        targetValue = restProgressTarget,
+                        label = "RestProgress"
+                    )
 
-                        if (!activeItem.weightOrNote.isNullOrBlank()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(iosColors.cardSecondary)
+                            .border(BorderStroke(1.dp, accentColor.copy(alpha = 0.35f)), RoundedCornerShape(16.dp))
+                            .padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(accentColor.copy(alpha = 0.14f))
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
                             Text(
-                                text = "${appProfile.weightOrNoteLabel}: ${activeItem.weightOrNote}",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium,
+                                text = "Перерыв",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
                                 color = accentColor
                             )
                         }
 
-                        // Set dots indicator when sets > 1
-                        if (targetSets > 1) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                for (setIdx in 1..targetSets) {
-                                    val isSetCompleted = setIdx <= activeItem.completedSets
-                                    val isCurrentSet = setIdx == currentSetNumber && !activeItem.isDone
-                                    Box(
-                                        modifier = Modifier
-                                            .size(if (isCurrentSet) 30.dp else 26.dp)
-                                            .clip(CircleShape)
-                                            .background(
-                                                when {
-                                                    isSetCompleted -> IosGreen
-                                                    isCurrentSet -> accentColor.copy(alpha = 0.22f)
-                                                    else -> iosColors.card
-                                                }
-                                            )
-                                            .border(
-                                                width = if (isCurrentSet) 2.dp else 1.dp,
-                                                color = if (isSetCompleted) IosGreen else if (isCurrentSet) accentColor else iosColors.separator,
-                                                shape = CircleShape
-                                            ),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (isSetCompleted) {
-                                            Icon(
-                                                imageVector = Icons.Rounded.Check,
-                                                contentDescription = null,
-                                                tint = Color.White,
-                                                modifier = Modifier.size(15.dp)
-                                            )
-                                        } else {
-                                            Text(
-                                                text = setIdx.toString(),
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = if (isCurrentSet) accentColor else iosColors.textSecondary
-                                            )
-                                        }
-                                    }
-                                }
-                            }
+                        if (nextExercise != null) {
+                            Text(
+                                text = "Далее: ${nextExercise.title} • Подход $pendingNextSet из $nextTargetSets",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = iosColors.textPrimary,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
 
-                        // Interactive Timer Block (always available for timed exercises, rest, or timeboxes)
-                        val showTimerBlock = isRestMode || (activeItem.durationSeconds ?: 0) > 0 || showCustomTimerWheel || isTimerRunning
-                        if (showTimerBlock) {
-                            val mins = remainingSeconds / 60
-                            val secs = remainingSeconds % 60
-                            val formattedClock = String.format("%02d:%02d", mins, secs)
-
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .background(iosColors.card)
-                                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    Box(
-                                        contentAlignment = Alignment.Center,
-                                        modifier = Modifier.size(52.dp)
-                                    ) {
-                                        CircularProgressIndicator(
-                                            progress = { 1f },
-                                            modifier = Modifier.size(52.dp),
-                                            color = iosColors.separator.copy(alpha = 0.25f),
-                                            strokeWidth = 5.dp
-                                        )
-                                        CircularProgressIndicator(
-                                            progress = { animatedProgress },
-                                            modifier = Modifier.size(52.dp),
-                                            color = if (isRestMode) IosOrange else IosPurple,
-                                            strokeWidth = 5.dp,
-                                            strokeCap = StrokeCap.Round
-                                        )
-                                        Text(
-                                            text = formattedClock,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = iosColors.textPrimary
-                                        )
-                                    }
-
-                                    Column {
-                                        Text(
-                                            text = if (isRestMode) "Таймер отдыха" else "Таймер упражнения / этапа",
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = if (isRestMode) IosOrange else iosColors.textPrimary
-                                        )
-                                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .clip(RoundedCornerShape(6.dp))
-                                                    .background(iosColors.cardSecondary)
-                                                    .clickable {
-                                                        val nextVal = (remainingSeconds - 15).coerceAtLeast(5)
-                                                        remainingSeconds = nextVal
-                                                    }
-                                                    .padding(horizontal = 7.dp, vertical = 2.dp)
-                                            ) {
-                                                Text("-15с", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = iosColors.textSecondary)
-                                            }
-                                            Box(
-                                                modifier = Modifier
-                                                    .clip(RoundedCornerShape(6.dp))
-                                                    .background(iosColors.cardSecondary)
-                                                    .clickable {
-                                                        remainingSeconds += 15
-                                                        if (remainingSeconds > totalTimerSeconds) totalTimerSeconds = remainingSeconds
-                                                    }
-                                                    .padding(horizontal = 7.dp, vertical = 2.dp)
-                                            ) {
-                                                Text("+15с", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = IosBlue)
-                                            }
-                                            if (isRestMode) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .clip(RoundedCornerShape(6.dp))
-                                                        .background(IosOrange.copy(alpha = 0.16f))
-                                                        .clickable {
-                                                            isTimerRunning = false
-                                                            isRestMode = false
-                                                            val nextDur = activeItem.durationSeconds ?: 60
-                                                            totalTimerSeconds = nextDur
-                                                            remainingSeconds = nextDur
-                                                        }
-                                                        .padding(horizontal = 7.dp, vertical = 2.dp)
-                                                ) {
-                                                    Text("Пропустить", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = IosOrange)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    IconButton(
-                                        onClick = {
-                                            isTimerRunning = false
-                                            remainingSeconds = totalTimerSeconds
-                                        },
-                                        modifier = Modifier.size(36.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.Refresh,
-                                            contentDescription = "Сброс",
-                                            tint = iosColors.textSecondary
-                                        )
-                                    }
-                                    Box(
-                                        modifier = Modifier
-                                            .size(38.dp)
-                                            .clip(CircleShape)
-                                            .background(if (isTimerRunning) IosOrange else IosBlue)
-                                            .clickable {
-                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                isTimerRunning = !isTimerRunning
-                                            },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = if (isTimerRunning) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                                            contentDescription = "Старт/Пауза",
-                                            tint = Color.White
-                                        )
-                                    }
-                                }
-                            }
-                        } else {
-                            // Button to open custom timer wheel for this exercise
-                            Row(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(iosColors.card)
-                                    .clickable { showCustomTimerWheel = true }
-                                    .padding(horizontal = 10.dp, vertical = 5.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Timer,
-                                    contentDescription = null,
-                                    tint = IosBlue,
-                                    modifier = Modifier.size(15.dp)
-                                )
-                                Text(
-                                    text = "Включить секундомер / таймер для упражнения",
-                                    fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = IosBlue
-                                )
-                            }
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.size(96.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                progress = { 1f },
+                                modifier = Modifier.size(96.dp),
+                                color = iosColors.separator.copy(alpha = 0.35f),
+                                strokeWidth = 6.dp
+                            )
+                            CircularProgressIndicator(
+                                progress = { animatedRestProgress },
+                                modifier = Modifier.size(96.dp),
+                                color = accentColor,
+                                strokeWidth = 6.dp,
+                                strokeCap = StrokeCap.Round
+                            )
+                            Text(
+                                text = formatClock(restRemainingSec),
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = iosColors.textPrimary
+                            )
                         }
 
-                        // Primary Action Buttons: Complete Set / Complete Exercise & Next
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Button(
-                                onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    val newCompletedSets = activeItem.completedSets + 1
-                                    if (newCompletedSets < targetSets) {
-                                        // Advance set and start rest timer automatically!
-                                        val updatedList = items.toMutableList()
-                                        updatedList[activeIndex] = activeItem.copy(completedSets = newCompletedSets)
-                                        updateAndPersist(updatedList)
-                                        val restSec = (activeItem.restSeconds ?: 60).coerceAtLeast(15)
-                                        isRestMode = true
-                                        totalTimerSeconds = restSec
-                                        remainingSeconds = restSec
-                                        isTimerRunning = true
-                                    } else {
-                                        // Complete entire exercise/step and move to next!
-                                        isTimerRunning = false
-                                        isRestMode = false
-                                        val updatedList = items.toMutableList()
-                                        updatedList[activeIndex] = activeItem.copy(
-                                            completedSets = targetSets,
-                                            isDone = true
-                                        )
-                                        updateAndPersist(updatedList)
-                                        val nextIncomplete = updatedList.indexOfFirst { !it.isDone }
-                                        if (nextIncomplete >= 0) {
-                                            activeIndex = nextIncomplete
-                                        } else {
-                                            onSessionCompleted?.invoke((elapsedSessionSeconds / 60).coerceAtLeast(1))
-                                        }
-                                    }
-                                },
+                            OutlinedButton(
+                                onClick = { isPaused = !isPaused },
                                 shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (activeItem.completedSets + 1 < targetSets) accentColor else IosGreen
-                                ),
-                                modifier = Modifier.weight(1f)
+                                border = BorderStroke(1.dp, iosColors.separator),
+                                modifier = Modifier.height(46.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Rounded.Check,
+                                    imageVector = if (isPaused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause,
+                                    contentDescription = null,
+                                    tint = iosColors.textPrimary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+
+                            Button(
+                                onClick = ::skipRest,
+                                shape = RoundedCornerShape(12.dp),
+                                colors = iosPrimaryButtonColors(accentColor),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(46.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.SkipNext,
                                     contentDescription = null,
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = if (activeItem.completedSets + 1 < targetSets) {
-                                        "Завершить подход $currentSetNumber/$targetSets"
-                                    } else {
-                                        "Выполнено • Далее"
-                                    },
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.5.sp
+                                    text = "Пропустить перерыв",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
                                 )
-                            }
-
-                            if (items.size > 1) {
-                                IconButton(
-                                    onClick = {
-                                        isTimerRunning = false
-                                        isRestMode = false
-                                        activeIndex = (activeIndex + 1) % items.size
-                                    },
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(iosColors.card)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.SkipNext,
-                                        contentDescription = "Следующее",
-                                        tint = iosColors.textPrimary
-                                    )
-                                }
                             }
                         }
                     }
                 }
-            }
 
-            // Quick 1-Tap Profile Templates Row
-            Text(
-                text = "Быстрые шаблоны (${appProfile.title}):",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = iosColors.textSecondary
-            )
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                appProfile.defaultStepTemplates.forEach { tpl ->
-                    Box(
+                WorkoutPhase.FINISHED -> {
+                    Column(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(9.dp))
-                            .background(accentColor.copy(alpha = 0.12f))
-                            .border(BorderStroke(0.8.dp, accentColor.copy(alpha = 0.35f)), RoundedCornerShape(9.dp))
-                            .clickable {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                val created = SubtaskItem(
-                                    title = tpl.title,
-                                    sets = tpl.sets,
-                                    reps = tpl.reps,
-                                    durationSeconds = tpl.durationSeconds,
-                                    restSeconds = tpl.restSeconds,
-                                    weightOrNote = tpl.weightOrNote
-                                )
-                                val updated = items + created
-                                updateAndPersist(updated)
-                                if (items.isEmpty()) activeIndex = 0
-                            }
-                            .padding(horizontal = 9.dp, vertical = 5.dp)
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(accentColor.copy(alpha = 0.09f))
+                            .border(BorderStroke(1.dp, accentColor.copy(alpha = 0.4f)), RoundedCornerShape(16.dp))
+                            .padding(18.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text(
-                            text = tpl.chipLabel,
-                            fontSize = 11.5.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = accentColor
-                        )
-                    }
-                }
-
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(9.dp))
-                        .background(IosBlue.copy(alpha = 0.14f))
-                        .clickable { showAddStepForm = !showAddStepForm }
-                        .padding(horizontal = 9.dp, vertical = 5.dp)
-                ) {
-                    Text(
-                        text = if (showAddStepForm) "Скрыть конструктор" else "+ Своё ${appProfile.sessionItemTerm.lowercase()}",
-                        fontSize = 11.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = IosBlue
-                    )
-                }
-            }
-
-            // Custom Exercise / Step Builder Form
-            AnimatedVisibility(visible = showAddStepForm) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(iosColors.cardSecondary)
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = "Добавить ${appProfile.sessionItemTerm.lowercase()}",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = iosColors.textPrimary
-                    )
-                    OutlinedTextField(
-                        value = newStepTitle,
-                        onValueChange = { newStepTitle = it },
-                        label = { Text(appProfile.sessionItemTerm) },
-                        placeholder = { Text(appProfile.stepPlaceholder, fontSize = 12.sp) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = newStepSets,
-                            onValueChange = { newStepSets = it.filter { ch -> ch.isDigit() } },
-                            label = { Text("Подходы") },
-                            placeholder = { Text("3") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedTextField(
-                            value = newStepReps,
-                            onValueChange = { newStepReps = it },
-                            label = { Text("Повторы / Объем") },
-                            placeholder = { Text("12 повт") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1.3f)
-                        )
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = newStepDurationSec,
-                            onValueChange = { newStepDurationSec = it.filter { ch -> ch.isDigit() } },
-                            label = { Text("Таймер (сек)") },
-                            placeholder = { Text("60") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedTextField(
-                            value = newStepRestSec,
-                            onValueChange = { newStepRestSec = it.filter { ch -> ch.isDigit() } },
-                            label = { Text("Отдых (сек)") },
-                            placeholder = { Text("90") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    OutlinedTextField(
-                        value = newStepNote,
-                        onValueChange = { newStepNote = it },
-                        label = { Text(appProfile.weightOrNoteLabel) },
-                        placeholder = { Text(appProfile.weightOrNotePlaceholder, fontSize = 12.sp) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        TextButton(onClick = { showAddStepForm = false }) {
-                            Text("Отмена", color = iosColors.textSecondary)
-                        }
-                        Button(
-                            onClick = {
-                                if (newStepTitle.isNotBlank()) {
-                                    val created = SubtaskItem(
-                                        title = newStepTitle.trim(),
-                                        sets = newStepSets.toIntOrNull()?.takeIf { it > 0 },
-                                        reps = newStepReps.trim().takeIf { it.isNotBlank() },
-                                        durationSeconds = newStepDurationSec.toIntOrNull()?.takeIf { it > 0 },
-                                        restSeconds = newStepRestSec.toIntOrNull()?.takeIf { it > 0 },
-                                        weightOrNote = newStepNote.trim().takeIf { it.isNotBlank() }
-                                    )
-                                    val updated = items + created
-                                    updateAndPersist(updated)
-                                    newStepTitle = ""
-                                    showAddStepForm = false
-                                }
-                            },
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = IosBlue)
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(accentColor),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Добавить")
+                            Icon(
+                                imageVector = Icons.Rounded.Check,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        Text(
+                            text = "Тренировка завершена",
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = iosColors.textPrimary
+                        )
+                        if (totalElapsedSeconds > 0) {
+                            Text(
+                                text = "Время: ${formatClock(totalElapsedSeconds)}",
+                                fontSize = 13.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = accentColor
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    val resetList = items.map { it.copy(isDone = false, completedSets = 0) }
+                                    persistItems(resetList)
+                                    totalElapsedSeconds = 0
+                                    phase = WorkoutPhase.IDLE
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Заново", color = iosColors.textPrimary)
+                            }
+                            Button(
+                                onClick = onDismiss,
+                                shape = RoundedCornerShape(12.dp),
+                                colors = iosPrimaryButtonColors(accentColor),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Готово", fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
             }
 
-            // Full List of Exercises / Session Steps
-            if (items.isNotEmpty()) {
+            // Exercise List Header + Single "+ Упражнение" Toggle
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
-                    text = appProfile.sessionSectionTitle,
-                    fontSize = 13.sp,
+                    text = "Упражнения",
+                    fontSize = 13.5.sp,
                     fontWeight = FontWeight.Bold,
                     color = iosColors.textSecondary
                 )
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(accentColor.copy(alpha = 0.14f))
+                        .clickable {
+                            if (showExerciseForm) closeForm() else openAddForm()
+                        }
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                ) {
+                    Text(
+                        text = if (showExerciseForm) "Скрыть" else "+ Упражнение",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = accentColor
+                    )
+                }
+            }
+
+            // Compact Add / Edit Exercise Form with iOS Wheel Pickers
+            AnimatedVisibility(visible = showExerciseForm) {
+                key(editingExerciseId) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(iosColors.cardSecondary)
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = formTitle,
+                            onValueChange = { formTitle = it },
+                            label = { Text("Упражнение") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            // Sets Wheel
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(iosColors.card)
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Подходы",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = iosColors.textSecondary
+                                    )
+                                    Text(
+                                        text = formSets.toString(),
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = accentColor
+                                    )
+                                }
+                                IosWheelPicker(
+                                    items = setOptions,
+                                    selectedIndex = (formSets - 1).coerceIn(0, setOptions.lastIndex),
+                                    onItemSelected = { _, s -> formSets = s },
+                                    itemLabel = { it.toString() },
+                                    visibleItemsCount = 3,
+                                    itemHeight = 34.dp,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+
+                            // Reps Wheel (0 = "выкл", 1..100)
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(iosColors.card)
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Повторы",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = iosColors.textSecondary
+                                    )
+                                    Text(
+                                        text = if (formReps == 0) "выкл" else formReps.toString(),
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (formReps == 0) iosColors.textSecondary else accentColor
+                                    )
+                                }
+                                IosWheelPicker(
+                                    items = repOptions,
+                                    selectedIndex = formReps.coerceIn(0, repOptions.lastIndex),
+                                    onItemSelected = { _, r -> formReps = r },
+                                    itemLabel = { if (it == 0) "выкл" else it.toString() },
+                                    visibleItemsCount = 3,
+                                    itemHeight = 34.dp,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            TimeWheelPairCard(
+                                title = "Работа",
+                                minutes = formWorkMin,
+                                seconds = formWorkSec,
+                                minuteOptions = workMinuteOptions,
+                                secondOptions = secondOptions,
+                                zeroBadgeText = "таймер выкл",
+                                accentColor = accentColor,
+                                onMinutesSelected = { formWorkMin = it },
+                                onSecondsSelected = { formWorkSec = it },
+                                modifier = Modifier.weight(1f)
+                            )
+                            TimeWheelPairCard(
+                                title = "Отдых",
+                                minutes = formRestMin,
+                                seconds = formRestSec,
+                                minuteOptions = restMinuteOptions,
+                                secondOptions = secondOptions,
+                                zeroBadgeText = "без отдыха",
+                                accentColor = accentColor,
+                                onMinutesSelected = { formRestMin = it },
+                                onSecondsSelected = { formRestSec = it },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            TextButton(onClick = ::closeForm) {
+                                Text("Отмена", color = iosColors.textSecondary)
+                            }
+                            Button(
+                                onClick = {
+                                    val title = formTitle.trim()
+                                    if (title.isNotEmpty()) {
+                                        val workTotal = (formWorkMin * 60 + formWorkSec).takeIf { it > 0 }
+                                        val restTotal = (formRestMin * 60 + formRestSec).takeIf { it > 0 }
+                                        val repsClean = if (formReps == 0) null else pluralizeRu(formReps, "повтор", "повтора", "повторов")
+                                        val targetEditId = editingExerciseId
+                                        if (targetEditId != null) {
+                                            val updated = items.map { existing ->
+                                                if (existing.id == targetEditId) {
+                                                    existing.copy(
+                                                        title = title,
+                                                        sets = formSets,
+                                                        reps = repsClean,
+                                                        durationSeconds = workTotal,
+                                                        restSeconds = restTotal
+                                                    )
+                                                } else existing
+                                            }
+                                            persistItems(updated)
+                                        } else {
+                                            val created = SubtaskItem(
+                                                title = title,
+                                                sets = formSets,
+                                                reps = repsClean,
+                                                durationSeconds = workTotal,
+                                                restSeconds = restTotal
+                                            )
+                                            persistItems(items + created)
+                                        }
+                                        closeForm()
+                                    }
+                                },
+                                enabled = formTitle.isNotBlank(),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = iosPrimaryButtonColors(accentColor)
+                            ) {
+                                if (editingExerciseId == null) {
+                                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                }
+                                Text(
+                                    text = if (editingExerciseId == null) "Добавить" else "Сохранить",
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Clean Exercise List
+            if (items.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items.forEachIndexed { idx, step ->
-                        val isCurrent = idx == activeIndex
-                        val summary = step.formatStepSummary()
+                    items.forEachIndexed { idx, exercise ->
+                        val isCurrent = phase != WorkoutPhase.IDLE && idx == activeIndex
+                        val meta = formatExerciseMeta(exercise)
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -807,15 +1155,19 @@ fun InteractiveSessionPlayerSheet(
                                 )
                                 .border(
                                     BorderStroke(
-                                        width = if (isCurrent) 1.5.dp else 0.dp,
+                                        width = if (isCurrent) 1.2.dp else 0.dp,
                                         color = if (isCurrent) accentColor else Color.Transparent
                                     ),
                                     RoundedCornerShape(12.dp)
                                 )
                                 .clickable {
-                                    isTimerRunning = false
-                                    isRestMode = false
-                                    activeIndex = idx
+                                    if (phase == WorkoutPhase.IDLE) {
+                                        activeIndex = idx
+                                    } else {
+                                        val targetSets = (exercise.sets ?: 1).coerceAtLeast(1)
+                                        val nextSet = (exercise.completedSets + 1).coerceIn(1, targetSets)
+                                        startWorkAt(idx, nextSet, items)
+                                    }
                                 }
                                 .padding(horizontal = 12.dp, vertical = 9.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -827,90 +1179,73 @@ fun InteractiveSessionPlayerSheet(
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Icon(
-                                    imageVector = if (step.isDone) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
+                                    imageVector = if (exercise.isDone) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
                                     contentDescription = null,
-                                    tint = if (step.isDone) IosGreen else if (isCurrent) accentColor else iosColors.textSecondary,
+                                    tint = if (exercise.isDone || isCurrent) accentColor else iosColors.textSecondary,
                                     modifier = Modifier
                                         .size(21.dp)
                                         .clickable {
                                             val updated = items.toMutableList()
-                                            val nextDone = !step.isDone
-                                            updated[idx] = step.copy(
+                                            val nextDone = !exercise.isDone
+                                            updated[idx] = exercise.copy(
                                                 isDone = nextDone,
-                                                completedSets = if (nextDone) (step.sets ?: 1) else 0
+                                                completedSets = if (nextDone) (exercise.sets ?: 1) else 0
                                             )
-                                            updateAndPersist(updated)
+                                            persistItems(updated)
                                         }
                                 )
                                 Column {
                                     Text(
-                                        text = "${idx + 1}. ${step.title}",
+                                        text = "${idx + 1}. ${exercise.title}",
                                         fontSize = 14.sp,
                                         fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (step.isDone) iosColors.textSecondary else iosColors.textPrimary,
-                                        textDecoration = if (step.isDone) TextDecoration.LineThrough else TextDecoration.None
+                                        color = if (exercise.isDone) iosColors.textSecondary else iosColors.textPrimary,
+                                        textDecoration = if (exercise.isDone) TextDecoration.LineThrough else TextDecoration.None
                                     )
-                                    if (summary.isNotBlank()) {
+                                    if (meta.isNotBlank()) {
                                         Text(
-                                            text = summary,
+                                            text = meta,
                                             fontSize = 11.5.sp,
                                             color = if (isCurrent) accentColor else iosColors.textSecondary
                                         )
                                     }
                                 }
                             }
-                            IconButton(
-                                onClick = {
-                                    val updated = items.toMutableList().apply { removeAt(idx) }
-                                    updateAndPersist(updated)
-                                    if (activeIndex >= updated.size) {
-                                        activeIndex = (updated.size - 1).coerceAtLeast(0)
-                                    }
-                                },
-                                modifier = Modifier.size(28.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.DeleteOutline,
-                                    contentDescription = "Удалить",
-                                    tint = iosColors.textSecondary,
-                                    modifier = Modifier.size(17.dp)
-                                )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(
+                                    onClick = { openEditForm(exercise) },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Edit,
+                                        contentDescription = "Изменить",
+                                        tint = iosColors.textSecondary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                                IconButton(
+                                    onClick = {
+                                        val updated = items.toMutableList().apply { removeAt(idx) }
+                                        if (editingExerciseId == exercise.id) closeForm()
+                                        persistItems(updated)
+                                        if (updated.isEmpty()) {
+                                            phase = WorkoutPhase.IDLE
+                                            activeIndex = 0
+                                        } else if (activeIndex >= updated.size) {
+                                            activeIndex = (updated.size - 1).coerceAtLeast(0)
+                                        }
+                                    },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.DeleteOutline,
+                                        contentDescription = "Удалить",
+                                        tint = iosColors.textSecondary,
+                                        modifier = Modifier.size(17.dp)
+                                    )
+                                }
                             }
                         }
-                    }
-                }
-            }
-
-            // Quick Follow-Up Task Creator at bottom of player
-            if (onAddFollowUpTask != null) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(iosColors.cardSecondary)
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = followUpText,
-                        onValueChange = { followUpText = it },
-                        placeholder = { Text("➕ Быстрая заметка / задача по итогам...", fontSize = 12.5.sp) },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Button(
-                        onClick = {
-                            if (followUpText.isNotBlank()) {
-                                onAddFollowUpTask(followUpText.trim())
-                                followUpText = ""
-                            }
-                        },
-                        enabled = followUpText.isNotBlank(),
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = IosBlue)
-                    ) {
-                        Text("+ В задачи", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }

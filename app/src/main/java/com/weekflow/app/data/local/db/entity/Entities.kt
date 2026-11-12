@@ -13,6 +13,7 @@ import com.weekflow.app.domain.model.SchedulePreset
 import com.weekflow.app.domain.model.Slot
 import com.weekflow.app.domain.model.SubtaskItem
 import com.weekflow.app.domain.model.Task
+import com.weekflow.app.domain.model.TaskAttachment
 import com.weekflow.app.domain.model.TaskPriority
 import com.weekflow.app.domain.model.Vacation
 import com.weekflow.app.domain.model.WeekCycle
@@ -286,12 +287,21 @@ data class TaskEntity(
     @ColumnInfo(defaultValue = "'[]'")
     val subtasksJson: String = "[]",
     @ColumnInfo(defaultValue = "'default'")
-    val presetId: String = SchedulePreset.DEFAULT_ID
+    val presetId: String = SchedulePreset.DEFAULT_ID,
+    val grade: String? = null,
+    @ColumnInfo(defaultValue = "'[]'")
+    val attachmentsJson: String = "[]"
 ) {
     fun toDomain(): Task {
         val parsedSubtasks = try {
             if (subtasksJson.isBlank() || subtasksJson == "[]") emptyList()
             else subtaskJsonParser.decodeFromString<List<SubtaskItem>>(subtasksJson)
+        } catch (_: Exception) {
+            emptyList()
+        }
+        val parsedAttachments = try {
+            if (attachmentsJson.isBlank() || attachmentsJson == "[]") emptyList()
+            else subtaskJsonParser.decodeFromString<List<TaskAttachment>>(attachmentsJson)
         } catch (_: Exception) {
             emptyList()
         }
@@ -305,7 +315,9 @@ data class TaskEntity(
             note = note,
             priority = try { TaskPriority.valueOf(priority) } catch (_: Exception) { TaskPriority.NONE },
             subtasks = parsedSubtasks,
-            presetId = presetId.ifBlank { SchedulePreset.DEFAULT_ID }
+            presetId = presetId.ifBlank { SchedulePreset.DEFAULT_ID },
+            grade = grade,
+            attachments = parsedAttachments
         )
     }
 
@@ -314,6 +326,12 @@ data class TaskEntity(
             val serializedSubtasks = try {
                 if (domain.subtasks.isEmpty()) "[]"
                 else subtaskJsonParser.encodeToString(domain.subtasks)
+            } catch (_: Exception) {
+                "[]"
+            }
+            val serializedAttachments = try {
+                if (domain.attachments.isEmpty()) "[]"
+                else subtaskJsonParser.encodeToString(domain.attachments)
             } catch (_: Exception) {
                 "[]"
             }
@@ -327,7 +345,9 @@ data class TaskEntity(
                 note = domain.note,
                 priority = domain.priority.name,
                 subtasksJson = serializedSubtasks,
-                presetId = domain.presetId.ifBlank { SchedulePreset.DEFAULT_ID }
+                presetId = domain.presetId.ifBlank { SchedulePreset.DEFAULT_ID },
+                grade = domain.grade,
+                attachmentsJson = serializedAttachments
             )
         }
     }

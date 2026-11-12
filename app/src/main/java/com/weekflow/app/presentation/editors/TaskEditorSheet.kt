@@ -1,5 +1,8 @@
 package com.weekflow.app.presentation.editors
 
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -20,24 +23,23 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -46,19 +48,21 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.weekflow.app.core.designsystem.IosBlue
-import com.weekflow.app.core.designsystem.IosGreen
-import com.weekflow.app.core.designsystem.IosPurple
 import com.weekflow.app.core.designsystem.IosRed
 import com.weekflow.app.core.designsystem.LocalIosColors
 import com.weekflow.app.core.designsystem.components.IosDatePickerButton
@@ -67,19 +71,23 @@ import com.weekflow.app.core.designsystem.iosSwitchColors
 import com.weekflow.app.core.localization.LocalAppProfile
 import com.weekflow.app.core.util.ColorParser
 import com.weekflow.app.core.util.DateTimeUtils
+import com.weekflow.app.core.util.TaskAttachmentHelper
 import com.weekflow.app.domain.model.Activity
 import com.weekflow.app.domain.model.NextLessonMatch
 import com.weekflow.app.domain.model.SchedulePreset
 import com.weekflow.app.domain.model.Slot
 import com.weekflow.app.domain.model.SubtaskItem
 import com.weekflow.app.domain.model.Task
+import com.weekflow.app.domain.model.TaskAttachment
 import com.weekflow.app.domain.model.TaskPriority
 import com.weekflow.app.domain.model.UserPreferences
 import com.weekflow.app.domain.model.Vacation
 import com.weekflow.app.domain.usecase.CalculateNextLessonDateUseCase
 import com.weekflow.app.domain.usecase.DetectActiveOrRecentActivityUseCase
 import com.weekflow.app.domain.usecase.DetectedActivity
-import androidx.compose.ui.text.style.TextDecoration
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.LocalTime
 import java.util.UUID
@@ -108,8 +116,9 @@ fun TaskEditorSheet(
     val iosColors = LocalIosColors.current
     val appProfile = LocalAppProfile.current
     val haptic = LocalHapticFeedback.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
-    // Auto-detect activity if adding a new task without pre-selected activity
     val initialDetected: DetectedActivity? = remember(initialTask?.id) {
         if (initialTask == null && initialActivityId == null && allSlots.isNotEmpty() && detectActiveOrRecentActivityUseCase != null) {
             detectActiveOrRecentActivityUseCase(
@@ -131,10 +140,38 @@ fun TaskEditorSheet(
     var priority by remember(initialTask?.id) {
         mutableStateOf(initialTask?.priority ?: TaskPriority.NONE)
     }
+    var grade by remember(initialTask?.id) { mutableStateOf(initialTask?.grade) }
+    var attachments by remember(initialTask?.id) {
+        mutableStateOf(initialTask?.attachments ?: emptyList())
+    }
+    var newlyAddedAttachmentIds by remember(initialTask?.id) {
+        mutableStateOf(setOf<String>())
+    }
+    var removedInitialAttachments by remember(initialTask?.id) {
+        mutableStateOf(emptyList<TaskAttachment>())
+    }
     var subtasks by remember(initialTask?.id) {
         mutableStateOf(initialTask?.subtasks ?: emptyList())
     }
     var newSubtaskText by remember(initialTask?.id) { mutableStateOf("") }
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val attachment = withContext(Dispatchers.IO) {
+                    TaskAttachmentHelper.copyUriToInternalStorage(context, uri)
+                }
+                if (attachment != null) {
+                    newlyAddedAttachmentIds = newlyAddedAttachmentIds + attachment.id
+                    attachments = attachments + attachment
+                } else {
+                    Toast.makeText(context, "Не удалось прикрепить файл", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
 
     var selectedActivityId by remember(initialTask?.id, initialActivityId) {
         mutableStateOf(
@@ -172,7 +209,6 @@ fun TaskEditorSheet(
         mutableStateOf<NextLessonMatch?>(initialDetected?.nextLessonMatch)
     }
 
-    // Smart homework calculation trigger on subject selection
     fun recalculateSmartLesson(activityId: String) {
         val clickedSlot = allSlots.firstOrNull { it.id == initialSlotId && it.activityTypeId == activityId }
         val refTime = when {
@@ -230,8 +266,16 @@ fun TaskEditorSheet(
         }
     }
 
+    fun dismissAndCleanup() {
+        // Remove any newly copied files that were never saved
+        attachments
+            .filter { it.id in newlyAddedAttachmentIds }
+            .forEach { TaskAttachmentHelper.deleteLocalFile(it) }
+        onDismiss()
+    }
+
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { dismissAndCleanup() },
         sheetState = sheetState,
         containerColor = iosColors.card,
         modifier = modifier
@@ -251,13 +295,36 @@ fun TaskEditorSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = if (initialTask == null) "Новая задача" else "Редактировать задачу",
+                    text = if (initialTask == null) "Новая задача" else "Редактировать",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                     color = iosColors.textPrimary
                 )
-                TextButton(onClick = onDismiss) {
-                    Text("Отмена", color = iosColors.textSecondary)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    if (initialTask != null && onDelete != null) {
+                        IconButton(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                initialTask.attachments.forEach { TaskAttachmentHelper.deleteLocalFile(it) }
+                                onDelete(initialTask.id)
+                                onDismiss()
+                            },
+                            modifier = Modifier.size(34.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.DeleteOutline,
+                                contentDescription = "Удалить",
+                                tint = IosRed,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                    TextButton(onClick = { dismissAndCleanup() }) {
+                        Text("Отмена", color = iosColors.textSecondary)
+                    }
                 }
             }
 
@@ -265,55 +332,44 @@ fun TaskEditorSheet(
             val detected = detectedActivity
             if (showAutoDetectedBanner && detected != null) {
                 val act = activities.firstOrNull { it.id == detected.slot.activityTypeId }
-                val actName = act?.name ?: "Предмет"
+                val actName = act?.name ?: appProfile.subjectTerm
                 val actColor = ColorParser.parseHexColor(act?.colorHex ?: "#007AFF")
                 val nextDateStr = DateTimeUtils.formatDateWithDay(detected.nextLessonMatch.dueDate)
 
-                Box(
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
                         .background(actColor.copy(alpha = 0.12f))
-                        .border(BorderStroke(1.5.dp, actColor), RoundedCornerShape(12.dp))
-                        .padding(horizontal = 12.dp, vertical = 10.dp)
+                        .border(BorderStroke(1.dp, actColor.copy(alpha = 0.4f)), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                    Text(
+                        text = "$actName • ${appProfile.itemTerm.lowercase()} $nextDateStr",
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = iosColors.textPrimary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            showAutoDetectedBanner = false
+                            selectedActivityId = null
+                            linkedSlotId = null
+                            dueDateIso = defaultSmartReferenceDate.toString()
+                            smartLessonMatch = null
+                        },
+                        modifier = Modifier.size(24.dp)
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "⚡ Автовыбор по времени:",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = actColor
-                            )
-                            Text(
-                                text = "«$actName» (${if (detected.isOngoingOrUpcoming) "сейчас идет" else "недавно завершилось"}) → записано на следующее занятие ($nextDateStr)",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = iosColors.textPrimary
-                            )
-                        }
-                        IconButton(
-                            onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                showAutoDetectedBanner = false
-                                selectedActivityId = null
-                                linkedSlotId = null
-                                dueDateIso = defaultSmartReferenceDate.toString()
-                                smartLessonMatch = null
-                            },
-                            modifier = Modifier.size(28.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Close,
-                                contentDescription = "Сбросить",
-                                tint = iosColors.textSecondary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "Сбросить",
+                            tint = iosColors.textSecondary,
+                            modifier = Modifier.size(16.dp)
+                        )
                     }
                 }
             }
@@ -322,16 +378,15 @@ fun TaskEditorSheet(
             OutlinedTextField(
                 value = title,
                 onValueChange = { title = it },
-                label = { Text("Название задачи / задания") },
-                placeholder = { Text("например, Прочитать главу 3, выучить формулы") },
+                label = { Text("Название") },
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 1,
                 maxLines = 4
             )
 
-            // Priority Selector (TickTick style)
+            // Priority Selector
             Text(
-                text = "Приоритет задачи",
+                text = "Приоритет",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = iosColors.textSecondary
@@ -398,9 +453,9 @@ fun TaskEditorSheet(
                 }
             }
 
-            // Subject Selector
+            // Profile-aware Activity Selector
             Text(
-                text = "Привязка к предмету (необязательно)",
+                text = appProfile.subjectTerm,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = iosColors.textSecondary
@@ -437,7 +492,6 @@ fun TaskEditorSheet(
                     }
                 }
 
-                // "No Subject" chip
                 item {
                     val isNoSubject = selectedActivityId == null
                     Box(
@@ -453,7 +507,7 @@ fun TaskEditorSheet(
                             .padding(horizontal = 12.dp, vertical = 7.dp)
                     ) {
                         Text(
-                            text = "Без предмета",
+                            text = "Без привязки",
                             fontSize = 12.sp,
                             fontWeight = if (isNoSubject) FontWeight.SemiBold else FontWeight.Normal,
                             color = if (isNoSubject) Color.White else iosColors.textPrimary
@@ -495,14 +549,14 @@ fun TaskEditorSheet(
                 }
             }
 
-            // Smart Homework Engine Badge
+            // Smart Date Match Card (unified IosBlue palette)
             val match = smartLessonMatch
             if (match != null && match.slot != null) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
-                        .background(IosPurple.copy(alpha = 0.12f))
+                        .background(IosBlue.copy(alpha = 0.10f))
                         .padding(12.dp)
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -510,25 +564,17 @@ fun TaskEditorSheet(
                             Icon(
                                 imageVector = Icons.Rounded.AutoAwesome,
                                 contentDescription = null,
-                                tint = IosPurple,
-                                modifier = Modifier.size(20.dp)
+                                tint = IosBlue,
+                                modifier = Modifier.size(18.dp)
                             )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Column {
-                                Text(
-                                    text = "Привязка к дате занятия:",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = IosPurple
-                                )
-                                val parsedSelectedDate = runCatching { LocalDate.parse(dueDateIso.trim()) }.getOrDefault(match.dueDate)
-                                Text(
-                                    text = "${DateTimeUtils.formatDateWithDay(parsedSelectedDate)} (${match.slot.startTime})",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = iosColors.textPrimary
-                                )
-                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            val parsedSelectedDate = runCatching { LocalDate.parse(dueDateIso.trim()) }.getOrDefault(match.dueDate)
+                            Text(
+                                text = "Дата ${appProfile.itemTermGenitive}: ${DateTimeUtils.formatDateWithDay(parsedSelectedDate)} (${match.slot.startTime})",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = iosColors.textPrimary
+                            )
                         }
 
                         if (match.dueDate != referenceDate) {
@@ -542,7 +588,7 @@ fun TaskEditorSheet(
                                     modifier = Modifier
                                         .weight(1f)
                                         .clip(RoundedCornerShape(8.dp))
-                                        .background(if (isNextSelected) IosPurple else iosColors.cardSecondary)
+                                        .background(if (isNextSelected) IosBlue else iosColors.cardSecondary)
                                         .clickable {
                                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             dueDateIso = match.dueDate.toString()
@@ -552,8 +598,8 @@ fun TaskEditorSheet(
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
-                                        text = "След: ${DateTimeUtils.formatDateWithDay(match.dueDate)}",
-                                        fontSize = 11.sp,
+                                        text = "Далее • ${DateTimeUtils.formatDateWithDay(match.dueDate)}",
+                                        fontSize = 11.5.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = if (isNextSelected) Color.White else iosColors.textPrimary,
                                         maxLines = 1
@@ -563,7 +609,7 @@ fun TaskEditorSheet(
                                     modifier = Modifier
                                         .weight(1f)
                                         .clip(RoundedCornerShape(8.dp))
-                                        .background(if (isRefSelected) IosPurple else iosColors.cardSecondary)
+                                        .background(if (isRefSelected) IosBlue else iosColors.cardSecondary)
                                         .clickable {
                                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                             dueDateIso = referenceDate.toString()
@@ -573,8 +619,8 @@ fun TaskEditorSheet(
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
-                                        text = "Этот: ${DateTimeUtils.formatDateWithDay(referenceDate)}",
-                                        fontSize = 11.sp,
+                                        text = "Этот день • ${DateTimeUtils.formatDateWithDay(referenceDate)}",
+                                        fontSize = 11.5.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = if (isRefSelected) Color.White else iosColors.textPrimary,
                                         maxLines = 1
@@ -592,33 +638,20 @@ fun TaskEditorSheet(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Выбрать дату сдачи вручную",
-                        fontSize = 14.sp,
-                        color = iosColors.textPrimary
-                    )
-                    if (!isManualDateOverride) {
-                        val autoDate = runCatching { LocalDate.parse(dueDateIso) }.getOrNull()
-                        if (autoDate != null) {
-                            Text(
-                                text = "Авто: ${DateTimeUtils.formatDateWithDay(autoDate)}",
-                                fontSize = 12.sp,
-                                color = iosColors.textSecondary
-                            )
-                        }
-                    }
-                }
+                Text(
+                    text = "Дата вручную",
+                    fontSize = 14.sp,
+                    color = iosColors.textPrimary
+                )
                 Switch(
                     checked = isManualDateOverride,
                     onCheckedChange = { enabled ->
                         isManualDateOverride = enabled
                         if (!enabled) {
-                            // Return to automatic smart date based on current / last lesson
-                            val match = smartLessonMatch
-                            if (match != null && selectedActivityId != null) {
-                                dueDateIso = match.dueDate.toString()
-                                linkedSlotId = match.linkedSlotId
+                            val currentMatch = smartLessonMatch
+                            if (currentMatch != null && selectedActivityId != null) {
+                                dueDateIso = currentMatch.dueDate.toString()
+                                linkedSlotId = currentMatch.linkedSlotId
                             } else if (initialTask == null) {
                                 dueDateIso = defaultSmartReferenceDate.toString()
                             }
@@ -630,7 +663,7 @@ fun TaskEditorSheet(
 
             AnimatedVisibility(visible = isManualDateOverride) {
                 IosDatePickerButton(
-                    label = "Срок сдачи задачи",
+                    label = "Срок сдачи",
                     dateIso = dueDateIso,
                     onDateSelected = { dueDateIso = it },
                     modifier = Modifier.fillMaxWidth()
@@ -641,18 +674,40 @@ fun TaskEditorSheet(
             OutlinedTextField(
                 value = note,
                 onValueChange = { note = it },
-                label = { Text("Заметка / Подробности") },
-                placeholder = { Text("например, Страница 42, задачи 1-15") },
+                label = { Text("Заметка") },
                 modifier = Modifier.fillMaxWidth(),
-                minLines = 3,
-                maxLines = 10
+                minLines = 2,
+                maxLines = 8
             )
 
-            // Subtasks / Checklist section
+            // Grade Section
+            TaskGradeSection(
+                grade = grade,
+                onGradeChanged = { grade = it },
+                applyOnType = true
+            )
+
+            // Attachments Section
+            TaskAttachmentsSection(
+                attachments = attachments,
+                onAddClick = { filePickerLauncher.launch(arrayOf("*/*")) },
+                onOpenAttachment = { att -> TaskAttachmentHelper.openAttachment(context, att) },
+                onRemoveAttachment = { att ->
+                    attachments = attachments.filterNot { it.id == att.id }
+                    if (att.id in newlyAddedAttachmentIds) {
+                        TaskAttachmentHelper.deleteLocalFile(att)
+                        newlyAddedAttachmentIds = newlyAddedAttachmentIds - att.id
+                    } else {
+                        removedInitialAttachments = removedInitialAttachments + att
+                    }
+                }
+            )
+
+            // Minimal Checklist Section (no template chips, no trainer params)
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(RoundedCornerShape(14.dp))
                     .background(iosColors.cardSecondary)
                     .padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -663,9 +718,9 @@ fun TaskEditorSheet(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = appProfile.sessionSectionTitle,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        text = "Чек-лист",
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Bold,
                         color = iosColors.textPrimary
                     )
                     if (subtasks.isNotEmpty()) {
@@ -676,36 +731,6 @@ fun TaskEditorSheet(
                             fontWeight = FontWeight.Bold,
                             color = IosBlue
                         )
-                    }
-                }
-
-                // 1-Tap profile step templates
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(appProfile.defaultStepTemplates) { tpl ->
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(iosColors.card)
-                                .clickable {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    subtasks = subtasks + SubtaskItem(
-                                        title = tpl.title,
-                                        sets = tpl.sets,
-                                        reps = tpl.reps,
-                                        durationSeconds = tpl.durationSeconds,
-                                        restSeconds = tpl.restSeconds,
-                                        weightOrNote = tpl.weightOrNote
-                                    )
-                                }
-                                .padding(horizontal = 9.dp, vertical = 5.dp)
-                        ) {
-                            Text(
-                                text = "+ ${tpl.title}",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = IosBlue
-                            )
-                        }
                     }
                 }
 
@@ -721,33 +746,23 @@ fun TaskEditorSheet(
                                     if (it.id == sub.id) it.copy(isDone = !it.isDone) else it
                                 }
                             }
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                            .padding(horizontal = 10.dp, vertical = 7.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             imageVector = if (sub.isDone) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
                             contentDescription = null,
-                            tint = if (sub.isDone) IosGreen else iosColors.textSecondary,
+                            tint = if (sub.isDone) IosBlue else iosColors.textSecondary,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = sub.title,
-                                fontSize = 13.sp,
-                                color = if (sub.isDone) iosColors.textSecondary else iosColors.textPrimary,
-                                textDecoration = if (sub.isDone) TextDecoration.LineThrough else null
-                            )
-                            val summary = sub.formatStepSummary()
-                            if (summary.isNotBlank()) {
-                                Text(
-                                    text = summary,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = IosBlue
-                                )
-                            }
-                        }
+                        Text(
+                            text = sub.title,
+                            fontSize = 13.5.sp,
+                            color = if (sub.isDone) iosColors.textSecondary else iosColors.textPrimary,
+                            textDecoration = if (sub.isDone) TextDecoration.LineThrough else null,
+                            modifier = Modifier.weight(1f)
+                        )
                         IconButton(
                             onClick = {
                                 subtasks = subtasks.filterNot { it.id == sub.id }
@@ -756,7 +771,7 @@ fun TaskEditorSheet(
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.Close,
-                                contentDescription = "Удалить шаг",
+                                contentDescription = "Удалить пункт",
                                 tint = iosColors.textSecondary,
                                 modifier = Modifier.size(15.dp)
                             )
@@ -772,7 +787,17 @@ fun TaskEditorSheet(
                     OutlinedTextField(
                         value = newSubtaskText,
                         onValueChange = { newSubtaskText = it },
-                        placeholder = { Text("Добавить пункт чек-листа...", fontSize = 13.sp) },
+                        placeholder = { Text("Добавить пункт...", fontSize = 13.sp) },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(
+                            onDone = {
+                                if (newSubtaskText.isNotBlank()) {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    subtasks = subtasks + SubtaskItem(title = newSubtaskText.trim())
+                                    newSubtaskText = ""
+                                }
+                            }
+                        ),
                         modifier = Modifier.weight(1f),
                         singleLine = true
                     )
@@ -791,7 +816,7 @@ fun TaskEditorSheet(
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Add,
-                            contentDescription = "Добавить шаг",
+                            contentDescription = "Добавить",
                             tint = Color.White,
                             modifier = Modifier.size(20.dp)
                         )
@@ -801,10 +826,11 @@ fun TaskEditorSheet(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Save and Delete
+            // Primary Save Button
             Button(
                 onClick = {
                     if (title.isNotBlank()) {
+                        removedInitialAttachments.forEach { TaskAttachmentHelper.deleteLocalFile(it) }
                         val finalSubtasks = if (newSubtaskText.isNotBlank()) {
                             subtasks + SubtaskItem(title = newSubtaskText.trim())
                         } else {
@@ -820,7 +846,9 @@ fun TaskEditorSheet(
                             note = note.trim().takeIf { it.isNotBlank() },
                             priority = priority,
                             subtasks = finalSubtasks,
-                            presetId = initialTask?.presetId?.ifBlank { presetId } ?: presetId
+                            presetId = initialTask?.presetId?.ifBlank { presetId } ?: presetId,
+                            grade = grade?.trim()?.takeIf { it.isNotBlank() },
+                            attachments = attachments
                         )
                         onSave(task)
                         onDismiss()
@@ -833,23 +861,7 @@ fun TaskEditorSheet(
                     .fillMaxWidth()
                     .height(50.dp)
             ) {
-                Text("Сохранить задачу", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-            }
-
-            if (initialTask != null && onDelete != null) {
-                OutlinedButton(
-                    onClick = {
-                        onDelete(initialTask.id)
-                        onDismiss()
-                    },
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = IosRed),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(imageVector = Icons.Rounded.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Удалить задачу")
-                }
+                Text("Сохранить", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     }

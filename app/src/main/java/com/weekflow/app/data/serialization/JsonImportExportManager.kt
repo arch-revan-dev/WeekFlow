@@ -183,7 +183,9 @@ object JsonImportExportManager {
                     title = task.title.trim().ifBlank { "Задача" },
                     dueDateIso = cleanDueDate,
                     linkedActivityId = task.linkedActivityId?.takeIf { existingActIds.contains(it) },
-                    linkedSlotId = task.linkedSlotId?.takeIf { slotId -> validSlots.any { it.id == slotId } }
+                    linkedSlotId = task.linkedSlotId?.takeIf { slotId -> validSlots.any { it.id == slotId } },
+                    grade = task.grade?.trim()?.takeIf { it.isNotEmpty() },
+                    attachments = task.attachments.filter { it.displayName.isNotBlank() && it.localPath.isNotBlank() }
                 )
             )
         }

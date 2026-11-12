@@ -4,6 +4,8 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -21,8 +23,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,6 +32,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Checklist
@@ -42,7 +43,9 @@ import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.Flag
+import androidx.compose.material.icons.rounded.Grade
 import androidx.compose.material.icons.rounded.HourglassEmpty
+import androidx.compose.material.icons.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material.icons.rounded.Update
@@ -57,6 +60,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -74,24 +78,24 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.weekflow.app.core.designsystem.IosBlue
-import com.weekflow.app.core.designsystem.IosGreen
 import com.weekflow.app.core.designsystem.IosOrange
 import com.weekflow.app.core.designsystem.IosRed
 import com.weekflow.app.core.designsystem.LocalIosColors
-import com.weekflow.app.core.localization.LocalAppProfile
 import com.weekflow.app.core.util.ColorParser
 import com.weekflow.app.core.util.DateTimeUtils
+import com.weekflow.app.core.util.TaskAttachmentHelper
 import com.weekflow.app.domain.model.Activity
 import com.weekflow.app.domain.model.SubtaskItem
 import com.weekflow.app.domain.model.Task
+import com.weekflow.app.domain.model.TaskAttachment
 import com.weekflow.app.domain.model.TaskPriority
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
 
-/**
- * Full-screen / bottom-sheet reader for viewing a Task in full detail without any text truncation.
- * Supports reading long titles, multi-paragraph notes, checking/adding subtasks, copying text,
- * starting a focus timer, postponing, or jumping to the editor.
- */
+private val QUICK_GRADE_OPTIONS = listOf("5", "4", "3", "2", "Зачёт")
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun TaskDetailSheet(
@@ -103,17 +107,33 @@ fun TaskDetailSheet(
     onUpdateTask: (Task) -> Unit,
     onDeleteTask: () -> Unit,
     onStartFocusTimer: ((String) -> Unit)? = null,
-    onStartInteractiveSession: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val iosColors = LocalIosColors.current
-    val appProfile = LocalAppProfile.current
     val haptic = LocalHapticFeedback.current
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val today = LocalDate.now()
 
     var newSubtaskText by remember { mutableStateOf("") }
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val attachment = withContext(Dispatchers.IO) {
+                    TaskAttachmentHelper.copyUriToInternalStorage(context, uri)
+                }
+                if (attachment != null) {
+                    onUpdateTask(task.copy(attachments = task.attachments + attachment))
+                } else {
+                    Toast.makeText(context, "Не удалось прикрепить файл", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
 
     val taskDueDate = task.parseDueDate()
     val isOverdue = taskDueDate != null && taskDueDate.isBefore(today) && !task.isCompleted
@@ -121,14 +141,14 @@ fun TaskDetailSheet(
 
     val activityColor = linkedActivity?.let { ColorParser.parseHexColor(it.colorHex) } ?: IosBlue
     val priorityColor = when (task.priority) {
-        TaskPriority.HIGH -> Color(0xFFFF3B30)
-        TaskPriority.MEDIUM -> Color(0xFFFF9500)
-        TaskPriority.LOW -> Color(0xFF007AFF)
-        TaskPriority.NONE -> Color(0xFF8E8E93)
+        TaskPriority.HIGH -> IosRed
+        TaskPriority.MEDIUM -> IosOrange
+        TaskPriority.LOW -> IosBlue
+        TaskPriority.NONE -> iosColors.textSecondary
     }
 
     val checkboxBgColor by animateColorAsState(
-        targetValue = if (task.isCompleted) IosGreen else priorityColor.copy(alpha = 0.12f),
+        targetValue = if (task.isCompleted) IosBlue else priorityColor.copy(alpha = 0.12f),
         label = "DetailCheckboxBg"
     )
 
@@ -147,47 +167,115 @@ fun TaskDetailSheet(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Clean Top Header: Status Badge on the left, compact Close button on the right
+            // Top bar: Status Badge + Compact icon-only action bar (Copy, Edit, Focus, Tomorrow, Delete, Close)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 val (statusLabel, statusColor) = when {
-                    task.isCompleted -> "Выполнено" to IosGreen
+                    task.isCompleted -> "Выполнено" to IosBlue
                     isOverdue -> "Просрочено" to IosRed
-                    isDueToday -> "На сегодня" to IosOrange
+                    isDueToday -> "Сегодня" to IosOrange
                     else -> "Актуально" to IosBlue
                 }
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
-                        .background(statusColor.copy(alpha = 0.14f))
-                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                        .background(statusColor.copy(alpha = 0.12f))
+                        .padding(horizontal = 9.dp, vertical = 4.dp)
                 ) {
                     Text(
                         text = statusLabel,
-                        fontSize = 12.sp,
+                        fontSize = 11.5.sp,
                         fontWeight = FontWeight.Bold,
                         color = statusColor,
                         maxLines = 1
                     )
                 }
 
-                // Compact 32.dp Close circle (custom Box to avoid M3 48.dp minimumInteractiveComponentSize inflation)
-                Box(
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clip(CircleShape)
-                        .background(iosColors.cardSecondary)
-                        .clickable { onDismiss() },
-                    contentAlignment = Alignment.Center
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Close,
+                    TopActionIconButton(
+                        icon = Icons.Rounded.ContentCopy,
+                        contentDescription = "Копировать",
+                        tint = iosColors.textPrimary,
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            val fullText = buildString {
+                                append(task.title)
+                                if (!task.note.isNullOrBlank()) {
+                                    append("\n\n")
+                                    append(task.note)
+                                }
+                                if (task.subtasks.isNotEmpty()) {
+                                    append("\n\nЧек-лист:\n")
+                                    task.subtasks.forEach { sub ->
+                                        append(if (sub.isDone) "☑ " else "☐ ")
+                                        append(sub.title)
+                                        append("\n")
+                                    }
+                                }
+                            }
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("Задача", fullText.trim()))
+                            Toast.makeText(context, "Скопировано", Toast.LENGTH_SHORT).show()
+                        }
+                    )
+
+                    TopActionIconButton(
+                        icon = Icons.Rounded.Edit,
+                        contentDescription = "Изменить",
+                        tint = IosBlue,
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onEditClick()
+                        }
+                    )
+
+                    if (!task.isCompleted && onStartFocusTimer != null) {
+                        TopActionIconButton(
+                            icon = Icons.Rounded.HourglassEmpty,
+                            contentDescription = "Фокус",
+                            tint = IosBlue,
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onStartFocusTimer(task.title)
+                            }
+                        )
+                    }
+
+                    if (!task.isCompleted) {
+                        TopActionIconButton(
+                            icon = Icons.Rounded.Update,
+                            contentDescription = "На завтра",
+                            tint = IosBlue,
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                val tomorrowIso = LocalDate.now().plusDays(1).toString()
+                                onUpdateTask(task.copy(dueDateIso = tomorrowIso))
+                                Toast.makeText(context, "Перенесено на завтра", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
+
+                    TopActionIconButton(
+                        icon = Icons.Rounded.DeleteOutline,
+                        contentDescription = "Удалить",
+                        tint = IosRed,
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onDeleteTask()
+                        }
+                    )
+
+                    TopActionIconButton(
+                        icon = Icons.Rounded.Close,
                         contentDescription = "Закрыть",
                         tint = iosColors.textSecondary,
-                        modifier = Modifier.size(17.dp)
+                        onClick = onDismiss
                     )
                 }
             }
@@ -196,21 +284,21 @@ fun TaskDetailSheet(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
+                    .clip(RoundedCornerShape(14.dp))
                     .background(iosColors.cardSecondary.copy(alpha = if (iosColors.isDark) 0.55f else 0.7f))
-                    .padding(16.dp),
+                    .padding(14.dp),
                 verticalAlignment = Alignment.Top
             ) {
                 Box(
                     modifier = Modifier
                         .padding(top = 2.dp)
-                        .size(26.dp)
+                        .size(24.dp)
                         .clip(CircleShape)
                         .background(checkboxBgColor)
                         .border(
                             border = BorderStroke(
                                 width = if (task.isCompleted) 0.dp else 2.dp,
-                                color = if (task.isCompleted) IosGreen else priorityColor
+                                color = if (task.isCompleted) IosBlue else priorityColor
                             ),
                             shape = CircleShape
                         )
@@ -225,18 +313,18 @@ fun TaskDetailSheet(
                             imageVector = Icons.Rounded.Check,
                             contentDescription = "Выполнено",
                             tint = Color.White,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(15.dp)
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.width(14.dp))
+                Spacer(modifier = Modifier.width(12.dp))
 
                 SelectionContainer(modifier = Modifier.weight(1f)) {
                     Text(
                         text = task.title,
                         fontSize = 17.sp,
-                        lineHeight = 24.sp,
+                        lineHeight = 23.sp,
                         fontWeight = FontWeight.Bold,
                         color = if (task.isCompleted) iosColors.textSecondary else iosColors.textPrimary,
                         textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None
@@ -245,129 +333,129 @@ fun TaskDetailSheet(
             }
 
             // Metadata Badges (Subject, Due Date, Priority)
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                // Linked Subject
-                linkedActivity?.let { act ->
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(activityColor.copy(alpha = 0.14f))
-                            .border(BorderStroke(1.dp, activityColor.copy(alpha = 0.35f)), RoundedCornerShape(10.dp))
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            if (linkedActivity != null || taskDueDate != null || task.priority != TaskPriority.NONE) {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    linkedActivity?.let { act ->
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(9.dp))
+                                .background(activityColor.copy(alpha = 0.12f))
+                                .padding(horizontal = 10.dp, vertical = 5.dp)
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .clip(CircleShape)
-                                    .background(activityColor)
-                            )
-                            Text(
-                                text = act.name,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = activityColor,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(7.dp)
+                                        .clip(CircleShape)
+                                        .background(activityColor)
+                                )
+                                Text(
+                                    text = act.name,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = activityColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                     }
-                }
 
-                // Due Date
-                taskDueDate?.let { dueDate ->
-                    val dateColor = when {
-                        isOverdue -> IosRed
-                        isDueToday -> IosOrange
-                        else -> iosColors.textPrimary
-                    }
-                    val dateLabel = when {
-                        isOverdue -> "Просрочено: ${DateTimeUtils.formatDateWithDay(dueDate)}"
-                        isDueToday -> "Сегодня (${DateTimeUtils.formatDateWithDay(dueDate)})"
-                        dueDate.isEqual(today.plusDays(1)) -> "Завтра (${DateTimeUtils.formatDateWithDay(dueDate)})"
-                        else -> DateTimeUtils.formatDateWithDay(dueDate)
-                    }
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(iosColors.cardSecondary)
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    taskDueDate?.let { dueDate ->
+                        val dateColor = when {
+                            isOverdue -> IosRed
+                            isDueToday -> IosOrange
+                            else -> iosColors.textPrimary
+                        }
+                        val dateLabel = when {
+                            isOverdue -> DateTimeUtils.formatDateWithDay(dueDate)
+                            isDueToday -> "Сегодня (${DateTimeUtils.formatDateWithDay(dueDate)})"
+                            dueDate.isEqual(today.plusDays(1)) -> "Завтра (${DateTimeUtils.formatDateWithDay(dueDate)})"
+                            else -> DateTimeUtils.formatDateWithDay(dueDate)
+                        }
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(9.dp))
+                                .background(
+                                    if (isOverdue) IosRed.copy(alpha = 0.12f) else iosColors.cardSecondary
+                                )
+                                .padding(horizontal = 10.dp, vertical = 5.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Event,
-                                contentDescription = null,
-                                tint = dateColor,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Text(
-                                text = dateLabel,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = dateColor,
-                                maxLines = 1,
-                                softWrap = false
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Event,
+                                    contentDescription = null,
+                                    tint = dateColor,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = dateLabel,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = dateColor,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                            }
                         }
                     }
-                }
 
-                // Priority
-                if (task.priority != TaskPriority.NONE) {
-                    val pLabel = when (task.priority) {
-                        TaskPriority.HIGH -> "Высокий приоритет"
-                        TaskPriority.MEDIUM -> "Средний приоритет"
-                        TaskPriority.LOW -> "Низкий приоритет"
-                        TaskPriority.NONE -> ""
-                    }
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(priorityColor.copy(alpha = 0.14f))
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    if (task.priority != TaskPriority.NONE) {
+                        val pLabel = when (task.priority) {
+                            TaskPriority.HIGH -> "Высокий"
+                            TaskPriority.MEDIUM -> "Средний"
+                            TaskPriority.LOW -> "Низкий"
+                            TaskPriority.NONE -> ""
+                        }
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(9.dp))
+                                .background(priorityColor.copy(alpha = 0.12f))
+                                .padding(horizontal = 10.dp, vertical = 5.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Flag,
-                                contentDescription = null,
-                                tint = priorityColor,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Text(
-                                text = pLabel,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = priorityColor,
-                                maxLines = 1,
-                                softWrap = false
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Flag,
+                                    contentDescription = null,
+                                    tint = priorityColor,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Text(
+                                    text = pLabel,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = priorityColor,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                            }
                         }
                     }
                 }
             }
 
-            // Full Note / Detailed Description Section
+            // Note Section
             if (!task.note.isNullOrBlank()) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(14.dp))
                         .background(iosColors.cardSecondary)
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -377,10 +465,10 @@ fun TaskDetailSheet(
                             imageVector = Icons.Rounded.Description,
                             contentDescription = null,
                             tint = IosBlue,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(15.dp)
                         )
                         Text(
-                            text = "Подробное описание / Заметка",
+                            text = "Заметка",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             color = iosColors.textSecondary
@@ -390,15 +478,34 @@ fun TaskDetailSheet(
                     SelectionContainer(modifier = Modifier.fillMaxWidth()) {
                         Text(
                             text = task.note,
-                            fontSize = 15.sp,
-                            lineHeight = 22.sp,
+                            fontSize = 14.5.sp,
+                            lineHeight = 21.sp,
                             color = iosColors.textPrimary
                         )
                     }
                 }
             }
 
-            // Full Interactive Checklist / Subtasks Section
+            // Grade Section
+            TaskGradeSection(
+                grade = task.grade,
+                onGradeChanged = { newGrade ->
+                    onUpdateTask(task.copy(grade = newGrade))
+                }
+            )
+
+            // Attachments Section
+            TaskAttachmentsSection(
+                attachments = task.attachments,
+                onAddClick = { filePickerLauncher.launch(arrayOf("*/*")) },
+                onOpenAttachment = { att -> TaskAttachmentHelper.openAttachment(context, att) },
+                onRemoveAttachment = { att ->
+                    TaskAttachmentHelper.deleteLocalFile(att)
+                    onUpdateTask(task.copy(attachments = task.attachments.filterNot { it.id == att.id }))
+                }
+            )
+
+            // Clean Minimal Checklist Section (no template chips, no trainer params)
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -423,89 +530,34 @@ fun TaskDetailSheet(
                             imageVector = Icons.Rounded.Checklist,
                             contentDescription = null,
                             tint = IosBlue,
-                            modifier = Modifier.size(17.dp)
+                            modifier = Modifier.size(16.dp)
                         )
                         Text(
-                            text = appProfile.sessionSectionTitle,
-                            fontSize = 14.sp,
+                            text = "Чек-лист",
+                            fontSize = 13.5.sp,
                             fontWeight = FontWeight.Bold,
                             color = iosColors.textPrimary
                         )
                     }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        if (totalCount > 0) {
-                            Text(
-                                text = "$doneCount из $totalCount",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (doneCount == totalCount) IosGreen else IosBlue
-                            )
-                        }
-                        if (onStartInteractiveSession != null) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(IosBlue)
-                                    .clickable {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        onStartInteractiveSession()
-                                    }
-                                    .padding(horizontal = 9.dp, vertical = 4.dp)
-                            ) {
-                                Text(
-                                    text = appProfile.startSessionLabel,
-                                    fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // 1-Tap profile step templates
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(appProfile.defaultStepTemplates) { tpl ->
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(iosColors.card)
-                                .clickable {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    val updated = task.subtasks + SubtaskItem(
-                                        title = tpl.title,
-                                        sets = tpl.sets,
-                                        reps = tpl.reps,
-                                        durationSeconds = tpl.durationSeconds,
-                                        restSeconds = tpl.restSeconds,
-                                        weightOrNote = tpl.weightOrNote
-                                    )
-                                    onUpdateTask(task.copy(subtasks = updated))
-                                }
-                                .padding(horizontal = 9.dp, vertical = 5.dp)
-                        ) {
-                            Text(
-                                text = "+ ${tpl.title}",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = IosBlue
-                            )
-                        }
+                    if (totalCount > 0) {
+                        Text(
+                            text = "$doneCount/$totalCount",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = IosBlue
+                        )
                     }
                 }
 
                 if (totalCount > 0) {
                     LinearProgressIndicator(
                         progress = { doneCount.toFloat() / totalCount.toFloat() },
-                        color = if (doneCount == totalCount) IosGreen else IosBlue,
+                        color = IosBlue,
                         trackColor = iosColors.card,
                         strokeCap = StrokeCap.Round,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(6.dp)
+                            .height(5.dp)
                             .clip(RoundedCornerShape(3.dp))
                     )
 
@@ -523,42 +575,31 @@ fun TaskDetailSheet(
                                         }
                                         onUpdateTask(task.copy(subtasks = updated))
                                     }
-                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    .padding(horizontal = 12.dp, vertical = 9.dp),
                                 verticalAlignment = Alignment.Top
                             ) {
                                 Icon(
                                     imageVector = if (sub.isDone) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
                                     contentDescription = null,
-                                    tint = if (sub.isDone) IosGreen else iosColors.textSecondary,
+                                    tint = if (sub.isDone) IosBlue else iosColors.textSecondary,
                                     modifier = Modifier
                                         .padding(top = 1.dp)
-                                        .size(20.dp)
+                                        .size(19.dp)
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = sub.title,
-                                        fontSize = 14.sp,
-                                        lineHeight = 20.sp,
-                                        color = if (sub.isDone) iosColors.textSecondary else iosColors.textPrimary,
-                                        textDecoration = if (sub.isDone) TextDecoration.LineThrough else null
-                                    )
-                                    val summary = sub.formatStepSummary()
-                                    if (summary.isNotBlank()) {
-                                        Text(
-                                            text = summary,
-                                            fontSize = 11.5.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = IosBlue
-                                        )
-                                    }
-                                }
+                                Text(
+                                    text = sub.title,
+                                    fontSize = 14.sp,
+                                    lineHeight = 20.sp,
+                                    color = if (sub.isDone) iosColors.textSecondary else iosColors.textPrimary,
+                                    textDecoration = if (sub.isDone) TextDecoration.LineThrough else null,
+                                    modifier = Modifier.weight(1f)
+                                )
                             }
                         }
                     }
                 }
 
-                // Quick add subtask right inside the detail view
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -567,7 +608,7 @@ fun TaskDetailSheet(
                     OutlinedTextField(
                         value = newSubtaskText,
                         onValueChange = { newSubtaskText = it },
-                        placeholder = { Text("Добавить шаг в чек-лист...", fontSize = 13.sp) },
+                        placeholder = { Text("Добавить пункт...", fontSize = 13.sp) },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(
@@ -600,7 +641,7 @@ fun TaskDetailSheet(
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Add,
-                            contentDescription = "Добавить шаг",
+                            contentDescription = "Добавить",
                             tint = Color.White,
                             modifier = Modifier.size(22.dp)
                         )
@@ -608,176 +649,39 @@ fun TaskDetailSheet(
                 }
             }
 
-            // Action Grid: 2x2 well-spaced custom action buttons (never wraps or overflows)
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+            // Single clean primary bottom CTA
+            val primaryColor = if (task.isCompleted) IosOrange else IosBlue
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(primaryColor)
+                    .clickable {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onToggleCompleted()
+                    },
+                contentAlignment = Alignment.Center
             ) {
-                // Row 1: Изменить + Копировать
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
                 ) {
-                    TaskDetailActionTile(
-                        icon = Icons.Rounded.Edit,
-                        label = "Изменить",
-                        tint = IosBlue,
-                        backgroundColor = IosBlue.copy(alpha = 0.12f),
-                        borderColor = IosBlue.copy(alpha = 0.30f),
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onEditClick()
-                        },
-                        modifier = Modifier.weight(1f)
+                    Icon(
+                        imageVector = if (task.isCompleted) Icons.Rounded.Replay else Icons.Rounded.Check,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
                     )
-
-                    TaskDetailActionTile(
-                        icon = Icons.Rounded.ContentCopy,
-                        label = "Копировать",
-                        tint = iosColors.textPrimary,
-                        backgroundColor = iosColors.cardSecondary,
-                        borderColor = iosColors.separator,
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            val fullText = buildString {
-                                append(task.title)
-                                if (!task.note.isNullOrBlank()) {
-                                    append("\n\n")
-                                    append(task.note)
-                                }
-                                if (task.subtasks.isNotEmpty()) {
-                                    append("\n\nЧек-лист:\n")
-                                    task.subtasks.forEach { sub ->
-                                        append(if (sub.isDone) "☑ " else "☐ ")
-                                        append(sub.title)
-                                        append("\n")
-                                    }
-                                }
-                            }
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            clipboard.setPrimaryClip(ClipData.newPlainText("Задача", fullText.trim()))
-                            Toast.makeText(context, "Текст задачи скопирован", Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier.weight(1f)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (task.isCompleted) "Вернуть" else "Выполнено",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        maxLines = 1,
+                        softWrap = false
                     )
-                }
-
-                // Row 2: Фокус + На завтра (for active tasks)
-                if (!task.isCompleted) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        if (onStartFocusTimer != null) {
-                            TaskDetailActionTile(
-                                icon = Icons.Rounded.HourglassEmpty,
-                                label = "Фокус",
-                                tint = IosBlue,
-                                backgroundColor = iosColors.cardSecondary,
-                                borderColor = iosColors.separator,
-                                onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    onStartFocusTimer(task.title)
-                                },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-
-                        TaskDetailActionTile(
-                            icon = Icons.Rounded.Update,
-                            label = "На завтра",
-                            tint = IosOrange,
-                            backgroundColor = IosOrange.copy(alpha = 0.10f),
-                            borderColor = IosOrange.copy(alpha = 0.30f),
-                            onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                val tomorrowIso = LocalDate.now().plusDays(1).toString()
-                                onUpdateTask(task.copy(dueDateIso = tomorrowIso))
-                                Toast.makeText(context, "Перенесено на завтра", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-
-                // Row 3: Primary Complete/Restore Button + Delete Button
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    val primaryColor = if (task.isCompleted) IosOrange else IosGreen
-                    Box(
-                        modifier = Modifier
-                            .weight(1.35f)
-                            .height(48.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(primaryColor)
-                            .clickable {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                onToggleCompleted()
-                            }
-                            .padding(horizontal = 12.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                imageVector = if (task.isCompleted) Icons.Rounded.Replay else Icons.Rounded.Check,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = if (task.isCompleted) "В работу" else "Выполнено",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                                maxLines = 1,
-                                softWrap = false,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(IosRed.copy(alpha = 0.12f))
-                            .border(BorderStroke(1.dp, IosRed.copy(alpha = 0.35f)), RoundedCornerShape(12.dp))
-                            .clickable {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                onDeleteTask()
-                            }
-                            .padding(horizontal = 12.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.DeleteOutline,
-                                contentDescription = null,
-                                tint = IosRed,
-                                modifier = Modifier.size(17.dp)
-                            )
-                            Spacer(modifier = Modifier.width(5.dp))
-                            Text(
-                                text = "Удалить",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = IosRed,
-                                maxLines = 1,
-                                softWrap = false,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
                 }
             }
         }
@@ -785,45 +689,312 @@ fun TaskDetailSheet(
 }
 
 @Composable
-private fun TaskDetailActionTile(
+private fun TopActionIconButton(
     icon: ImageVector,
-    label: String,
+    contentDescription: String,
     tint: Color,
-    backgroundColor: Color,
-    borderColor: Color,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    onClick: () -> Unit
 ) {
+    val iosColors = LocalIosColors.current
     Box(
-        modifier = modifier
-            .height(44.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(backgroundColor)
-            .border(BorderStroke(0.8.dp, borderColor), RoundedCornerShape(12.dp))
-            .clickable { onClick() }
-            .padding(horizontal = 12.dp),
+        modifier = Modifier
+            .size(32.dp)
+            .clip(CircleShape)
+            .background(iosColors.cardSecondary)
+            .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = Modifier.size(16.dp)
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun TaskGradeSection(
+    grade: String?,
+    onGradeChanged: (String?) -> Unit,
+    applyOnType: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    val iosColors = LocalIosColors.current
+    val haptic = LocalHapticFeedback.current
+    val normalizedGrade = grade?.trim()?.takeIf { it.isNotBlank() }
+    var customInput by remember {
+        mutableStateOf(if (normalizedGrade != null && normalizedGrade !in QUICK_GRADE_OPTIONS) normalizedGrade else "")
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(iosColors.cardSecondary)
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
         Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = tint,
-                modifier = Modifier.size(16.dp)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Grade,
+                    contentDescription = null,
+                    tint = IosBlue,
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = "Оценка",
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = iosColors.textPrimary
+                )
+            }
+
+            if (normalizedGrade != null) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(IosBlue.copy(alpha = 0.14f))
+                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = normalizedGrade,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = IosBlue
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(22.dp)
+                            .clip(CircleShape)
+                            .background(iosColors.card)
+                            .clickable {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                customInput = ""
+                                onGradeChanged(null)
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "Очистить оценку",
+                            tint = iosColors.textSecondary,
+                            modifier = Modifier.size(13.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            QUICK_GRADE_OPTIONS.forEach { option ->
+                val selected = normalizedGrade == option
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (selected) IosBlue else iosColors.card)
+                        .clickable {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            customInput = ""
+                            onGradeChanged(if (selected) null else option)
+                        }
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = option,
+                        fontSize = 13.sp,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                        color = if (selected) Color.White else iosColors.textPrimary
+                    )
+                }
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = customInput,
+                onValueChange = { text ->
+                    customInput = text
+                    if (applyOnType) {
+                        onGradeChanged(text.trim().takeIf { it.isNotBlank() })
+                    }
+                },
+                placeholder = { Text("Своя оценка", fontSize = 12.5.sp) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(
+                    onDone = {
+                        val trimmed = customInput.trim()
+                        onGradeChanged(trimmed.takeIf { it.isNotBlank() })
+                    }
+                ),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.weight(1f)
             )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = label,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = tint,
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Ellipsis
-            )
+            if (!applyOnType && customInput.isNotBlank() && customInput.trim() != normalizedGrade) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(IosBlue)
+                        .clickable {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onGradeChanged(customInput.trim())
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Check,
+                        contentDescription = "Применить",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun TaskAttachmentsSection(
+    attachments: List<TaskAttachment>,
+    onAddClick: () -> Unit,
+    onOpenAttachment: (TaskAttachment) -> Unit,
+    onRemoveAttachment: (TaskAttachment) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val iosColors = LocalIosColors.current
+    val haptic = LocalHapticFeedback.current
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(iosColors.cardSecondary)
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.AttachFile,
+                    contentDescription = null,
+                    tint = IosBlue,
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = "Вложения",
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = iosColors.textPrimary
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(IosBlue.copy(alpha = 0.12f))
+                    .clickable {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onAddClick()
+                    }
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Add,
+                    contentDescription = null,
+                    tint = IosBlue,
+                    modifier = Modifier.size(14.dp)
+                )
+                Text(
+                    text = "Прикрепить файл",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = IosBlue
+                )
+            }
+        }
+
+        attachments.forEach { att ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(iosColors.card)
+                    .clickable { onOpenAttachment(att) }
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.InsertDriveFile,
+                    contentDescription = null,
+                    tint = IosBlue,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = att.displayName,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = iosColors.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = TaskAttachmentHelper.formatFileSize(att.sizeBytes),
+                        fontSize = 11.sp,
+                        color = iosColors.textSecondary
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .size(26.dp)
+                        .clip(CircleShape)
+                        .clickable {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onRemoveAttachment(att)
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = "Удалить вложение",
+                        tint = iosColors.textSecondary,
+                        modifier = Modifier.size(15.dp)
+                    )
+                }
+            }
         }
     }
 }

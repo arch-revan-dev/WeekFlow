@@ -47,11 +47,9 @@ import androidx.compose.ui.unit.sp
 import com.weekflow.app.core.designsystem.LocalIosColors
 import com.weekflow.app.core.localization.LocalAppProfile
 import com.weekflow.app.core.util.ColorParser
-import com.weekflow.app.domain.model.AppProfile
 import com.weekflow.app.domain.model.CardDensity
 import com.weekflow.app.domain.model.ScheduleCardStyle
 import com.weekflow.app.domain.model.SlotWithDetails
-import com.weekflow.app.domain.model.SubtaskItem
 import com.weekflow.app.domain.model.Task
 import com.weekflow.app.domain.model.WeekCycle
 import java.time.Duration
@@ -427,67 +425,40 @@ fun LessonSlotCard(
                     }
                 }
 
-                // Top right actions: Interactive Session / Focus timer + Add Task button
+                // Top right actions: Workout Play (HEALTH only) / Focus timer + Add Task icon button
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    if (onStartInteractiveSession != null) {
+                    if (appProfile.supportsWorkouts && onStartInteractiveSession != null) {
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
+                                .size(28.dp)
+                                .clip(CircleShape)
                                 .background(activityColor.copy(alpha = if (isDark) 0.22f else 0.14f))
-                                .border(
-                                    width = 0.8.dp,
-                                    color = activityColor.copy(alpha = if (isDark) 0.40f else 0.26f),
-                                    shape = RoundedCornerShape(10.dp)
-                                )
                                 .clickable {
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     onStartInteractiveSession()
-                                }
-                                .padding(horizontal = 7.dp, vertical = 5.5.dp),
+                                },
                             contentAlignment = Alignment.Center
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(2.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.PlayArrow,
-                                    contentDescription = appProfile.startSessionLabel,
-                                    tint = activityColor,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                if (details.slot.sessionItems.isNotEmpty() || appProfile == AppProfile.HEALTH) {
-                                    Text(
-                                        text = if (details.slot.sessionItems.isNotEmpty()) {
-                                            "${details.slot.sessionItems.count { it.isDone }}/${details.slot.sessionItems.size}"
-                                        } else {
-                                            "Старт"
-                                        },
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = activityColor
-                                    )
-                                }
-                            }
+                            Icon(
+                                imageVector = Icons.Rounded.PlayArrow,
+                                contentDescription = "Начать тренировку",
+                                tint = activityColor,
+                                modifier = Modifier.size(16.dp)
+                            )
                         }
                     } else if (onStartFocusTimer != null) {
                         Box(
                             modifier = Modifier
+                                .size(28.dp)
                                 .clip(CircleShape)
                                 .background(activityColor.copy(alpha = if (isDark) 0.20f else 0.12f))
-                                .border(
-                                    width = 0.8.dp,
-                                    color = activityColor.copy(alpha = if (isDark) 0.35f else 0.22f),
-                                    shape = CircleShape
-                                )
                                 .clickable {
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     onStartFocusTimer()
-                                }
-                                .padding(6.dp),
+                                },
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
@@ -501,117 +472,45 @@ fun LessonSlotCard(
 
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
+                            .size(28.dp)
+                            .clip(CircleShape)
                             .background(activityColor.copy(alpha = if (isDark) 0.20f else 0.12f))
-                            .border(
-                                width = 0.8.dp,
-                                color = activityColor.copy(alpha = if (isDark) 0.35f else 0.22f),
-                                shape = RoundedCornerShape(10.dp)
-                            )
                             .clickable {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 onAddTaskClick()
-                            }
-                            .padding(horizontal = 9.dp, vertical = 5.5.dp),
+                            },
                         contentAlignment = Alignment.Center
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(3.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Add,
-                                contentDescription = "Добавить задачу",
-                                tint = activityColor,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Text(
-                                text = if (appProfile == AppProfile.HEALTH) "Цель" else "Задача",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = activityColor
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Rounded.Add,
+                            contentDescription = "Добавить задачу",
+                            tint = activityColor,
+                            modifier = Modifier.size(16.dp)
+                        )
                     }
                 }
             }
 
-            // Interactive Session Items (Exercises / Agenda / Practice steps) inside card
-            if (details.slot.sessionItems.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Box(
+            // Compact 1-line workout summary (HEALTH only)
+            if (appProfile.supportsWorkouts && details.slot.sessionItems.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                val namesPreview = details.slot.sessionItems.joinToString(", ") { it.title }
+                Text(
+                    text = "${pluralizeRu(details.slot.sessionItems.size, "упражнение", "упражнения", "упражнений")}: $namesPreview",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = activityColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(activityColor.copy(alpha = if (isDark) 0.12f else 0.07f))
-                        .border(
-                            width = 0.8.dp,
-                            color = activityColor.copy(alpha = if (isDark) 0.28f else 0.18f),
-                            shape = RoundedCornerShape(10.dp)
-                        )
+                        .clip(RoundedCornerShape(6.dp))
                         .clickable {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             onStartInteractiveSession?.invoke() ?: onCardClick()
                         }
-                        .padding(horizontal = 10.dp, vertical = 8.dp)
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = appProfile.sessionSectionTitle,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = activityColor
-                            )
-                            Text(
-                                text = appProfile.startSessionLabel,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = activityColor
-                            )
-                        }
-                        details.slot.sessionItems.take(4).forEach { step ->
-                            val summary = step.formatStepSummary()
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = (if (step.isDone) "✓ " else "• ") + step.title,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = if (step.isDone) iosColors.textSecondary else iosColors.textPrimary,
-                                    textDecoration = if (step.isDone) TextDecoration.LineThrough else TextDecoration.None,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                if (summary.isNotBlank()) {
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = summary,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = activityColor,
-                                        maxLines = 1
-                                    )
-                                }
-                            }
-                        }
-                        if (details.slot.sessionItems.size > 4) {
-                            Text(
-                                text = "+ ещё ${details.slot.sessionItems.size - 4}...",
-                                fontSize = 11.sp,
-                                color = iosColors.textSecondary
-                            )
-                        }
-                    }
-                }
+                        .padding(vertical = 2.dp)
+                )
             }
 
             // Linked Tasks section inside card
@@ -749,5 +648,16 @@ fun LessonSlotCard(
                 trackColor = activityColor.copy(alpha = 0.2f)
             )
         }
+    }
+}
+
+private fun pluralizeRu(count: Int, one: String, few: String, many: String): String {
+    val mod100 = kotlin.math.abs(count) % 100
+    val mod10 = mod100 % 10
+    return when {
+        mod100 in 11..19 -> "$count $many"
+        mod10 == 1 -> "$count $one"
+        mod10 in 2..4 -> "$count $few"
+        else -> "$count $many"
     }
 }

@@ -76,23 +76,31 @@ data class SubtaskItem(
             if (!reps.isNullOrBlank()) {
                 parts.add("$sets × $reps")
             } else {
-                parts.add("$sets подх.")
+                parts.add(pluralize(sets, "подход", "подхода", "подходов"))
             }
         } else if (!reps.isNullOrBlank()) {
             parts.add(reps)
         }
         if (durationSeconds != null && durationSeconds > 0) {
-            val mins = durationSeconds / 60
-            val secs = durationSeconds % 60
-            parts.add(if (mins > 0 && secs == 0) "$mins мин" else if (mins > 0) "${mins}м ${secs}с" else "${secs} сек")
+            parts.add("работа ${formatShortDuration(durationSeconds)}")
         }
         if (restSeconds != null && restSeconds > 0) {
-            parts.add("отдых ${restSeconds}с")
+            parts.add("отдых ${formatShortDuration(restSeconds)}")
         }
         if (!weightOrNote.isNullOrBlank()) {
             parts.add(weightOrNote)
         }
         return parts.joinToString(" • ")
+    }
+}
+
+private fun formatShortDuration(totalSeconds: Int): String {
+    val mins = totalSeconds / 60
+    val secs = totalSeconds % 60
+    return when {
+        mins > 0 && secs == 0 -> "$mins мин"
+        mins > 0 -> "$mins мин $secs сек"
+        else -> "$secs сек"
     }
 }
 
@@ -176,6 +184,15 @@ data class CalendarEvent(
 }
 
 @Serializable
+data class TaskAttachment(
+    val id: String = UUID.randomUUID().toString(),
+    val displayName: String,
+    val localPath: String,
+    val mimeType: String,
+    val sizeBytes: Long = 0L
+)
+
+@Serializable
 data class Task(
     val id: String = UUID.randomUUID().toString(),
     val title: String,
@@ -186,7 +203,9 @@ data class Task(
     val note: String? = null,
     val priority: TaskPriority = TaskPriority.NONE,
     val subtasks: List<SubtaskItem> = emptyList(),
-    val presetId: String = SchedulePreset.DEFAULT_ID
+    val presetId: String = SchedulePreset.DEFAULT_ID,
+    val grade: String? = null,
+    val attachments: List<TaskAttachment> = emptyList()
 ) {
     fun parseDueDate(): LocalDate? = dueDateIso?.let {
         try {
@@ -277,79 +296,16 @@ data class NextLessonMatch(
 )
 
 @Serializable
-data class RhythmReminder(
+data class RegularReminder(
     val id: String = UUID.randomUUID().toString(),
     val title: String,
-    val subtitle: String = "",
-    val iconEmoji: String = "💧",
-    val intervalMinutes: Int = 90,
+    val isEnabled: Boolean = true,
+    val isIntervalMode: Boolean = true,
+    val intervalMinutes: Int = 60,
     val startTime: String = "09:00",
-    val endTime: String = "21:30",
-    val isEnabled: Boolean = false
-) {
-    companion object {
-        val DEFAULT_LIST = listOf(
-            RhythmReminder(
-                id = "rhythm_water",
-                title = "Водный баланс",
-                subtitle = "Выпить стакан чистой воды",
-                iconEmoji = "💧",
-                intervalMinutes = 90,
-                startTime = "09:00",
-                endTime = "21:30",
-                isEnabled = false
-            ),
-            RhythmReminder(
-                id = "rhythm_posture",
-                title = "Осанка и разминка шеи",
-                subtitle = "Расправить плечи и сделать микро-разминку",
-                iconEmoji = "🧘",
-                intervalMinutes = 60,
-                startTime = "09:00",
-                endTime = "20:00",
-                isEnabled = false
-            ),
-            RhythmReminder(
-                id = "rhythm_eyes",
-                title = "Зрение 20-20-20",
-                subtitle = "Посмотреть вдаль на 20 секунд, дать отдых глазам",
-                iconEmoji = "👀",
-                intervalMinutes = 45,
-                startTime = "09:00",
-                endTime = "20:00",
-                isEnabled = false
-            ),
-            RhythmReminder(
-                id = "rhythm_focus_checkin",
-                title = "Сверка курса (Анти-прокрастинация)",
-                subtitle = "То, что ты делаешь сейчас, приближает к цели дня?",
-                iconEmoji = "🎯",
-                intervalMinutes = 120,
-                startTime = "10:00",
-                endTime = "20:00",
-                isEnabled = false
-            ),
-            RhythmReminder(
-                id = "rhythm_air",
-                title = "Проветривание и движение",
-                subtitle = "Встать, пройтись 3 минуты и пустить свежий воздух",
-                iconEmoji = "🌬️",
-                intervalMinutes = 180,
-                startTime = "09:00",
-                endTime = "21:00",
-                isEnabled = false
-            )
-        )
-    }
-}
-
-@Serializable
-data class QuickReminder(
-    val id: String = UUID.randomUUID().toString(),
-    val title: String,
-    val iconEmoji: String = "🔔",
-    val triggerAtEpochMillis: Long,
-    val targetTimeFormatted: String
+    val endTime: String = "21:00",
+    val exactTime: String = "09:00",
+    val daysOfWeek: List<Int> = emptyList()
 )
 
 @Serializable
@@ -379,8 +335,7 @@ data class UserPreferences(
     val showAllPresetsTasks: Boolean = false,
     val focusSessionsCompleted: Int = 0,
     val focusMinutesTotal: Int = 0,
-    val rhythmReminders: List<RhythmReminder> = RhythmReminder.DEFAULT_LIST,
-    val quickReminders: List<QuickReminder> = emptyList()
+    val regularReminders: List<RegularReminder> = emptyList()
 ) {
     fun parseSemesterStartDate(): LocalDate = try {
         LocalDate.parse(semesterStartDateIso)

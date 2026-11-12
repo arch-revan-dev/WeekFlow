@@ -3,8 +3,7 @@ package com.weekflow.app.domain.repository
 import com.weekflow.app.domain.model.AppProfile
 import com.weekflow.app.domain.model.AppThemeMode
 import com.weekflow.app.domain.model.CardDensity
-import com.weekflow.app.domain.model.QuickReminder
-import com.weekflow.app.domain.model.RhythmReminder
+import com.weekflow.app.domain.model.RegularReminder
 import com.weekflow.app.domain.model.ScheduleCardStyle
 import com.weekflow.app.domain.model.ScheduleViewMode
 import com.weekflow.app.domain.model.UserPreferences
@@ -41,7 +40,6 @@ interface PreferencesRepository {
     suspend fun updateShowAllPresetsTasks(show: Boolean)
     suspend fun recordCompletedFocusSession(minutes: Int)
 
-    suspend fun updateRhythmReminders(reminders: List<RhythmReminder>)
-    suspend fun updateQuickReminders(reminders: List<QuickReminder>)
+    suspend fun updateRegularReminders(reminders: List<RegularReminder>)
 }
 

@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import com.weekflow.app.domain.model.RegularReminder
 import com.weekflow.app.domain.model.SchedulePreset
 import com.weekflow.app.domain.model.WeekCycle
 import com.weekflow.app.domain.repository.PreferencesRepository
@@ -42,35 +43,41 @@ class NotificationScheduler(
         // 2. Schedule daily evening summary (20:00)
         if (preferences.eveningSummaryEnabled) {
             scheduleDailyEveningSummary()
+        } else {
+            cancelAlarmByType(ScheduleAlarmReceiver.ALARM_TYPE_EVENING_SUMMARY)
         }
 
         // 3. Schedule morning task reminders (08:00)
         if (preferences.taskRemindersEnabled) {
             scheduleMorningTaskReminder()
+        } else {
+            cancelAlarmByType(ScheduleAlarmReceiver.ALARM_TYPE_TASK_DEADLINES)
         }
 
-        // 4. Schedule interval rhythm reminders and quick one-shot reminders
-        scheduleRhythmAndQuickReminders()
+        // 4. Schedule regular reminders (interval mode and fixed-time mode)
+        scheduleRegularReminders()
     }
 
-    suspend fun scheduleRhythmAndQuickReminders() {
+    suspend fun scheduleRegularReminders() {
         val preferences = preferencesRepository.userPreferences.first()
         val now = LocalDateTime.now()
-        val nowMillis = System.currentTimeMillis()
         val fmt = DateTimeFormatter.ofPattern("HH:mm")
 
-        // Schedule Interval Rhythm Reminders (Next-Tick Chaining within active window)
-        preferences.rhythmReminders.forEach { reminder ->
-            val reqCode = ("rhythm_" + reminder.id).hashCode()
+        preferences.regularReminders.forEach { reminder ->
+            val reqCode = ("regular_" + reminder.id).hashCode()
+            val title = reminder.title.ifBlank { "Напоминание" }
+            val message = if (reminder.isIntervalMode) {
+                "Каждые ${reminder.intervalMinutes} мин (${reminder.startTime}–${reminder.endTime})"
+            } else {
+                "Запланировано на ${reminder.exactTime}"
+            }
             val intent = Intent(context, ScheduleAlarmReceiver::class.java).apply {
                 action = ScheduleAlarmReceiver.ACTION_ALARM
-                putExtra(ScheduleAlarmReceiver.EXTRA_ALARM_TYPE, ScheduleAlarmReceiver.ALARM_TYPE_RHYTHM_REMINDER)
+                putExtra(ScheduleAlarmReceiver.EXTRA_ALARM_TYPE, ScheduleAlarmReceiver.ALARM_TYPE_REGULAR_REMINDER)
                 putExtra(ScheduleAlarmReceiver.EXTRA_NOTIFICATION_ID, reqCode)
-                putExtra(ScheduleAlarmReceiver.EXTRA_TITLE, "${reminder.iconEmoji} ${reminder.title}")
-                putExtra(
-                    ScheduleAlarmReceiver.EXTRA_MESSAGE,
-                    reminder.subtitle.ifBlank { "Регулярное напоминание (каждые ${reminder.intervalMinutes} мин)" }
-                )
+                putExtra(ScheduleAlarmReceiver.EXTRA_REMINDER_ID, reminder.id)
+                putExtra(ScheduleAlarmReceiver.EXTRA_TITLE, title)
+                putExtra(ScheduleAlarmReceiver.EXTRA_MESSAGE, message)
             }
             if (!reminder.isEnabled) {
                 val cancelPi = PendingIntent.getBroadcast(
@@ -81,56 +88,65 @@ class NotificationScheduler(
                 )
                 if (cancelPi != null) alarmManager.cancel(cancelPi)
             } else {
-                val startT = runCatching { LocalTime.parse(reminder.startTime, fmt) }.getOrDefault(LocalTime.of(9, 0))
-                val endT = runCatching { LocalTime.parse(reminder.endTime, fmt) }.getOrDefault(LocalTime.of(21, 30))
-                val intervalMin = reminder.intervalMinutes.coerceIn(15, 720).toLong()
-
-                val todayStart = LocalDateTime.of(now.toLocalDate(), startT)
-                val todayEnd = if (endT.isAfter(startT)) {
-                    LocalDateTime.of(now.toLocalDate(), endT)
-                } else {
-                    LocalDateTime.of(now.toLocalDate().plusDays(1), endT)
+                val nextTriggerDateTime = computeNextRegularTrigger(reminder, now, fmt)
+                if (nextTriggerDateTime != null) {
+                    val triggerMillis = nextTriggerDateTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                    val pi = PendingIntent.getBroadcast(
+                        context,
+                        reqCode,
+                        intent,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+                    setAlarm(triggerMillis, pi)
                 }
-
-                val nextTriggerDateTime = when {
-                    now.isBefore(todayStart) -> todayStart
-                    !now.isAfter(todayEnd) -> {
-                        val candidate = now.plusMinutes(intervalMin)
-                        if (!candidate.isAfter(todayEnd)) candidate else todayStart.plusDays(1)
-                    }
-                    else -> todayStart.plusDays(1)
-                }
-
-                val triggerMillis = nextTriggerDateTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-                val pi = PendingIntent.getBroadcast(
-                    context,
-                    reqCode,
-                    intent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
-                setAlarm(triggerMillis, pi)
             }
         }
+    }
 
-        // Schedule Quick One-Shot Reminders
-        preferences.quickReminders.forEach { quick ->
-            val reqCode = ("quick_" + quick.id).hashCode()
-            if (quick.triggerAtEpochMillis > nowMillis) {
-                val intent = Intent(context, ScheduleAlarmReceiver::class.java).apply {
-                    action = ScheduleAlarmReceiver.ACTION_ALARM
-                    putExtra(ScheduleAlarmReceiver.EXTRA_ALARM_TYPE, ScheduleAlarmReceiver.ALARM_TYPE_QUICK_REMINDER)
-                    putExtra(ScheduleAlarmReceiver.EXTRA_NOTIFICATION_ID, reqCode)
-                    putExtra(ScheduleAlarmReceiver.EXTRA_TITLE, "${quick.iconEmoji} Напоминание")
-                    putExtra(ScheduleAlarmReceiver.EXTRA_MESSAGE, "${quick.title} (${quick.targetTimeFormatted})")
+    private fun computeNextRegularTrigger(
+        reminder: RegularReminder,
+        now: LocalDateTime,
+        fmt: DateTimeFormatter
+    ): LocalDateTime? {
+        val allowedDays = reminder.daysOfWeek.filter { it in 1..7 }.toSet()
+        return if (reminder.isIntervalMode) {
+            val startT = runCatching { LocalTime.parse(reminder.startTime, fmt) }.getOrDefault(LocalTime.of(9, 0))
+            val endT = runCatching { LocalTime.parse(reminder.endTime, fmt) }.getOrDefault(LocalTime.of(21, 0))
+            val intervalMin = reminder.intervalMinutes.coerceIn(1, 720).toLong()
+
+            for (dayOffset in -1..7) {
+                if (dayOffset == -1 && !endT.isBefore(startT)) continue
+                val date = now.toLocalDate().plusDays(dayOffset.toLong())
+                if (allowedDays.isNotEmpty() && date.dayOfWeek.value !in allowedDays) continue
+
+                val windowStart = LocalDateTime.of(date, startT)
+                val windowEnd = if (endT.isBefore(startT)) {
+                    LocalDateTime.of(date.plusDays(1), endT)
+                } else {
+                    LocalDateTime.of(date, endT)
                 }
-                val pi = PendingIntent.getBroadcast(
-                    context,
-                    reqCode,
-                    intent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
-                setAlarm(quick.triggerAtEpochMillis, pi)
+
+                val candidate = when {
+                    now.isBefore(windowStart) -> windowStart
+                    !now.isAfter(windowEnd) -> now.plusMinutes(intervalMin).takeIf { !it.isAfter(windowEnd) }
+                    else -> null
+                }
+                if (candidate != null && candidate.isAfter(now)) {
+                    return candidate
+                }
             }
+            null
+        } else {
+            val exactT = runCatching { LocalTime.parse(reminder.exactTime, fmt) }.getOrDefault(LocalTime.of(9, 0))
+            for (dayOffset in 0..7) {
+                val date = now.toLocalDate().plusDays(dayOffset.toLong())
+                if (allowedDays.isNotEmpty() && date.dayOfWeek.value !in allowedDays) continue
+                val candidate = LocalDateTime.of(date, exactT)
+                if (candidate.isAfter(now)) {
+                    return candidate
+                }
+            }
+            null
         }
     }
 
@@ -335,18 +351,23 @@ class NotificationScheduler(
         }
     }
 
-    fun cancelAll() {
+    private fun cancelAlarmByType(alarmType: Int) {
         val intent = Intent(context, ScheduleAlarmReceiver::class.java).apply {
             action = ScheduleAlarmReceiver.ACTION_ALARM
         }
         val pendingIntent = PendingIntent.getBroadcast(
             context,
-            ScheduleAlarmReceiver.ALARM_TYPE_EVENING_SUMMARY,
+            alarmType,
             intent,
             PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
         )
         if (pendingIntent != null) {
             alarmManager.cancel(pendingIntent)
         }
+    }
+
+    fun cancelAll() {
+        cancelAlarmByType(ScheduleAlarmReceiver.ALARM_TYPE_EVENING_SUMMARY)
+        cancelAlarmByType(ScheduleAlarmReceiver.ALARM_TYPE_TASK_DEADLINES)
     }
 }

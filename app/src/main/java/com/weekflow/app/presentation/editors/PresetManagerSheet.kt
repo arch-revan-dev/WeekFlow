@@ -25,20 +25,17 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.ContentCopy
-import androidx.compose.material.icons.rounded.DeleteOutline
-import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -58,7 +55,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.weekflow.app.core.designsystem.IosBlue
-import com.weekflow.app.core.designsystem.IosGreen
 import com.weekflow.app.core.designsystem.IosRed
 import com.weekflow.app.core.designsystem.LocalIosColors
 import com.weekflow.app.core.designsystem.components.ColorPalettePicker
@@ -72,25 +68,8 @@ import com.weekflow.app.domain.model.AppProfile
 import com.weekflow.app.domain.model.SchedulePreset
 import com.weekflow.app.domain.model.Slot
 import com.weekflow.app.domain.model.Task
-import java.time.DayOfWeek
 import java.time.LocalDate
-import java.time.temporal.TemporalAdjusters
 import java.util.UUID
-
-private data class QuickPresetTemplate(
-    val name: String,
-    val emoji: String,
-    val colorHex: String,
-    val profile: AppProfile
-)
-
-private val quickTemplates = listOf(
-    QuickPresetTemplate("Школа", "🎒", "#007AFF", AppProfile.STUDY),
-    QuickPresetTemplate("ВУЗ / Сессия", "🎓", "#FF3B30", AppProfile.UNIVERSITY),
-    QuickPresetTemplate("Работа", "💼", "#5856D6", AppProfile.WORK),
-    QuickPresetTemplate("Спорт / Режим", "🏋️", "#FF9500", AppProfile.HEALTH),
-    QuickPresetTemplate("Универсальный", "🌟", "#34C759", AppProfile.UNIVERSAL)
-)
 
 private val presetEmojis = listOf(
     "🎓", "🔥", "💼", "📚", "⚡", "🏋️", "🏖️", "🎯", "💻", "🧪", "🎨", "🌟"
@@ -128,13 +107,13 @@ fun PresetManagerSheet(
     var formStartDateIso by remember { mutableStateOf(LocalDate.now().toString()) }
     var formEndDateIso by remember { mutableStateOf(LocalDate.now().plusWeeks(2).toString()) }
 
-    fun openCreateForm(template: QuickPresetTemplate? = null) {
+    fun openCreateForm() {
         editingPreset = null
         isCreatingNew = true
-        formName = template?.name ?: ""
-        formEmoji = template?.emoji ?: "🎓"
-        formColorHex = template?.colorHex ?: "#007AFF"
-        formProfile = template?.profile ?: AppProfile.STUDY
+        formName = ""
+        formEmoji = "🎓"
+        formColorHex = "#007AFF"
+        formProfile = AppProfile.STUDY
         formUseAutoDates = false
         formStartDateIso = LocalDate.now().toString()
         formEndDateIso = LocalDate.now().plusWeeks(2).toString()
@@ -172,25 +151,17 @@ fun PresetManagerSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = if (isCreatingNew) {
-                            if (editingPreset == null) "Новый пресет" else "Настройка пресета"
-                        } else {
-                            "Пресеты расписания и задач"
-                        },
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = iosColors.textPrimary
-                    )
-                    if (!isCreatingNew) {
-                        Text(
-                            text = "Разделяйте расписания (учеба, сессия, работа) и назначайте даты их работы",
-                            fontSize = 12.sp,
-                            color = iosColors.textSecondary
-                        )
-                    }
-                }
+                Text(
+                    text = if (isCreatingNew) {
+                        if (editingPreset == null) "Новый пресет" else "Настройка пресета"
+                    } else {
+                        "Пресеты"
+                    },
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = iosColors.textPrimary,
+                    modifier = Modifier.weight(1f)
+                )
                 TextButton(
                     onClick = {
                         if (isCreatingNew) {
@@ -215,9 +186,9 @@ fun PresetManagerSheet(
                     presets.forEach { preset ->
                         val isSelected = preset.id == activePresetId
                         val presetColor = ColorParser.parseHexColor(preset.colorHex)
-                        val actCount = allActivities.count { it.presetId == preset.id }
                         val slotCount = allSlots.count { it.presetId == preset.id }
                         val taskCount = allTasks.count { it.presetId == preset.id && !it.isCompleted }
+                        var menuExpanded by remember(preset.id) { mutableStateOf(false) }
 
                         Box(
                             modifier = Modifier
@@ -305,8 +276,8 @@ fun PresetManagerSheet(
                                         Spacer(modifier = Modifier.height(2.dp))
 
                                         Text(
-                                            text = "${preset.appProfile.title} • ${preset.appProfile.subjectTerm}: $actCount • В нед: $slotCount • Задач: $taskCount",
-                                            fontSize = 11.5.sp,
+                                            text = "${preset.appProfile.title} • ${pluralizeRu(slotCount, "занятие", "занятия", "занятий")} • ${pluralizeRu(taskCount, "задача", "задачи", "задач")}",
+                                            fontSize = 12.sp,
                                             color = iosColors.textSecondary
                                         )
 
@@ -330,7 +301,7 @@ fun PresetManagerSheet(
                                                     modifier = Modifier.size(13.dp)
                                                 )
                                                 Text(
-                                                    text = "Авто по датам: $startFormatted – $endFormatted",
+                                                    text = "$startFormatted – $endFormatted",
                                                     fontSize = 11.5.sp,
                                                     fontWeight = FontWeight.SemiBold,
                                                     color = presetColor
@@ -339,58 +310,56 @@ fun PresetManagerSheet(
                                         }
                                     }
 
-                                    // Action buttons: Duplicate, Edit, Delete
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                    // Overflow Menu: Edit, Duplicate, Delete
+                                    Box {
                                         IconButton(
-                                            onClick = {
-                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                val copyPreset = SchedulePreset(
-                                                    id = UUID.randomUUID().toString(),
-                                                    name = "${preset.name} (копия)",
-                                                    iconEmoji = preset.iconEmoji,
-                                                    colorHex = preset.colorHex,
-                                                    appProfile = preset.appProfile
-                                                )
-                                                onDuplicatePreset(preset.id, copyPreset)
-                                            },
+                                            onClick = { menuExpanded = true },
                                             modifier = Modifier.size(32.dp)
                                         ) {
                                             Icon(
-                                                imageVector = Icons.Rounded.ContentCopy,
-                                                contentDescription = "Клонировать пресет",
+                                                imageVector = Icons.Rounded.MoreVert,
+                                                contentDescription = "Действия",
                                                 tint = iosColors.textSecondary,
-                                                modifier = Modifier.size(17.dp)
+                                                modifier = Modifier.size(19.dp)
                                             )
                                         }
 
-                                        IconButton(
-                                            onClick = {
-                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                openEditForm(preset)
-                                            },
-                                            modifier = Modifier.size(32.dp)
+                                        DropdownMenu(
+                                            expanded = menuExpanded,
+                                            onDismissRequest = { menuExpanded = false },
+                                            containerColor = iosColors.card
                                         ) {
-                                            Icon(
-                                                imageVector = Icons.Rounded.Edit,
-                                                contentDescription = "Редактировать пресет",
-                                                tint = IosBlue,
-                                                modifier = Modifier.size(17.dp)
-                                            )
-                                        }
-
-                                        if (preset.id != SchedulePreset.DEFAULT_ID && presets.size > 1) {
-                                            IconButton(
+                                            DropdownMenuItem(
+                                                text = { Text("Редактировать", color = iosColors.textPrimary) },
                                                 onClick = {
+                                                    menuExpanded = false
+                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                    openEditForm(preset)
+                                                }
+                                            )
+                                            DropdownMenuItem(
+                                                text = { Text("Дублировать", color = iosColors.textPrimary) },
+                                                onClick = {
+                                                    menuExpanded = false
                                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                    onDeletePreset(preset.id)
-                                                },
-                                                modifier = Modifier.size(32.dp)
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Rounded.DeleteOutline,
-                                                    contentDescription = "Удалить пресет",
-                                                    tint = IosRed,
-                                                    modifier = Modifier.size(18.dp)
+                                                    val copyPreset = SchedulePreset(
+                                                        id = UUID.randomUUID().toString(),
+                                                        name = "${preset.name} (копия)",
+                                                        iconEmoji = preset.iconEmoji,
+                                                        colorHex = preset.colorHex,
+                                                        appProfile = preset.appProfile
+                                                    )
+                                                    onDuplicatePreset(preset.id, copyPreset)
+                                                }
+                                            )
+                                            if (preset.id != SchedulePreset.DEFAULT_ID && presets.size > 1) {
+                                                DropdownMenuItem(
+                                                    text = { Text("Удалить", color = IosRed) },
+                                                    onClick = {
+                                                        menuExpanded = false
+                                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                        onDeletePreset(preset.id)
+                                                    }
                                                 )
                                             }
                                         }
@@ -405,7 +374,7 @@ fun PresetManagerSheet(
                 Button(
                     onClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        openCreateForm(null)
+                        openCreateForm()
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = IosBlue),
                     shape = RoundedCornerShape(12.dp),
@@ -421,50 +390,11 @@ fun PresetManagerSheet(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Создать новый пресет",
+                        text = "Создать пресет",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = Color.White
                     )
-                }
-
-                // Quick 1-Tap Templates
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        text = "БЫСТРЫЕ ШАБЛОНЫ В 1 ТАП",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = iosColors.textSecondary
-                    )
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(quickTemplates) { tpl ->
-                            val tplColor = ColorParser.parseHexColor(tpl.colorHex)
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(tplColor.copy(alpha = 0.14f))
-                                    .border(BorderStroke(1.dp, tplColor.copy(alpha = 0.4f)), RoundedCornerShape(10.dp))
-                                    .clickable {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        openCreateForm(tpl)
-                                    }
-                                    .padding(horizontal = 10.dp, vertical = 7.dp)
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
-                                ) {
-                                    Text(text = tpl.emoji, fontSize = 13.sp)
-                                    Text(
-                                        text = "+ ${tpl.name}",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = tplColor
-                                    )
-                                }
-                            }
-                        }
-                    }
                 }
 
                 // Global Tasks Option
@@ -480,19 +410,13 @@ fun PresetManagerSheet(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Общие задачи во всех пресетах",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = iosColors.textPrimary
-                            )
-                            Text(
-                                text = "Если выключено, у каждого пресета свой отдельный список задач",
-                                fontSize = 11.5.sp,
-                                color = iosColors.textSecondary
-                            )
-                        }
+                        Text(
+                            text = "Общие задачи во всех пресетах",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = iosColors.textPrimary,
+                            modifier = Modifier.weight(1f)
+                        )
                         Spacer(modifier = Modifier.width(8.dp))
                         Switch(
                             checked = showAllPresetsTasks,
@@ -507,13 +431,12 @@ fun PresetManagerSheet(
                     value = formName,
                     onValueChange = { formName = it },
                     label = { Text("Название пресета") },
-                    placeholder = { Text("например, Школа / ВУЗ / Тренировки / Работа") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
 
                 Text(
-                    text = "Профиль пресета (термины, звонки, длительность)",
+                    text = "Профиль",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = iosColors.textSecondary
@@ -540,26 +463,20 @@ fun PresetManagerSheet(
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     formProfile = profileOption
                                 }
-                                .padding(horizontal = 12.dp, vertical = 9.dp)
+                                .padding(horizontal = 12.dp, vertical = 11.dp)
                         ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = profileOption.title,
-                                        fontSize = 14.sp,
-                                        fontWeight = if (isChosenProfile) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isChosenProfile) IosBlue else iosColors.textPrimary
-                                    )
-                                    Text(
-                                        text = "${profileOption.subjectTerm} • ${profileOption.itemTerm} • ${profileOption.instructorTerm} • ${profileOption.locationTerm}",
-                                        fontSize = 11.sp,
-                                        color = iosColors.textSecondary
-                                    )
-                                }
+                                Text(
+                                    text = profileOption.title,
+                                    fontSize = 14.sp,
+                                    fontWeight = if (isChosenProfile) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isChosenProfile) IosBlue else iosColors.textPrimary,
+                                    modifier = Modifier.weight(1f)
+                                )
                                 if (isChosenProfile) {
                                     Icon(
                                         imageVector = Icons.Rounded.Check,
@@ -633,19 +550,13 @@ fun PresetManagerSheet(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Назначить даты работы пресета",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = iosColors.textPrimary
-                                )
-                                Text(
-                                    text = "В выбранный период это расписание будет включаться автоматически",
-                                    fontSize = 11.5.sp,
-                                    color = iosColors.textSecondary
-                                )
-                            }
+                            Text(
+                                text = "Автопереключение по датам",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = iosColors.textPrimary,
+                                modifier = Modifier.weight(1f)
+                            )
                             Switch(
                                 checked = formUseAutoDates,
                                 onCheckedChange = { formUseAutoDates = it },
@@ -654,59 +565,22 @@ fun PresetManagerSheet(
                         }
 
                         AnimatedVisibility(visible = formUseAutoDates) {
-                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                // Quick date range pills
-                                val today = LocalDate.now()
-                                val nextMonday = today.with(TemporalAdjusters.next(DayOfWeek.MONDAY))
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    listOf(
-                                        Triple("След. неделя", nextMonday, nextMonday.plusDays(6)),
-                                        Triple("На 2 недели", today, today.plusWeeks(2)),
-                                        Triple("На месяц", today, today.plusMonths(1))
-                                    ).forEach { (label, start, end) ->
-                                        Box(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .background(IosBlue.copy(alpha = 0.14f))
-                                                .clickable {
-                                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                    formStartDateIso = start.toString()
-                                                    formEndDateIso = end.toString()
-                                                }
-                                                .padding(vertical = 6.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                text = label,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = IosBlue
-                                            )
-                                        }
-                                    }
-                                }
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    IosDatePickerButton(
-                                        label = "С даты",
-                                        dateIso = formStartDateIso,
-                                        onDateSelected = { formStartDateIso = it },
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    IosDatePickerButton(
-                                        label = "По дату",
-                                        dateIso = formEndDateIso,
-                                        onDateSelected = { formEndDateIso = it },
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                IosDatePickerButton(
+                                    label = "С даты",
+                                    dateIso = formStartDateIso,
+                                    onDateSelected = { formStartDateIso = it },
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IosDatePickerButton(
+                                    label = "По дату",
+                                    dateIso = formEndDateIso,
+                                    onDateSelected = { formEndDateIso = it },
+                                    modifier = Modifier.weight(1f)
+                                )
                             }
                         }
                     }
@@ -749,5 +623,16 @@ fun PresetManagerSheet(
                 }
             }
         }
+    }
+}
+
+internal fun pluralizeRu(count: Int, one: String, few: String, many: String): String {
+    val mod100 = kotlin.math.abs(count) % 100
+    val mod10 = mod100 % 10
+    return when {
+        mod100 in 11..19 -> "$count $many"
+        mod10 == 1 -> "$count $one"
+        mod10 in 2..4 -> "$count $few"
+        else -> "$count $many"
     }
 }

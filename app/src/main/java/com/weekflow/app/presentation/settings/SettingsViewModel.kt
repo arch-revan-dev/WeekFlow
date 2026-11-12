@@ -14,8 +14,7 @@ import com.weekflow.app.domain.model.AppProfile
 import com.weekflow.app.domain.model.AppThemeMode
 import com.weekflow.app.domain.model.CardDensity
 import com.weekflow.app.domain.model.CleanSchedulePayload
-import com.weekflow.app.domain.model.QuickReminder
-import com.weekflow.app.domain.model.RhythmReminder
+import com.weekflow.app.domain.model.RegularReminder
 import com.weekflow.app.domain.model.ScheduleCardStyle
 import com.weekflow.app.domain.model.SchedulePreset
 import com.weekflow.app.domain.model.Slot
@@ -68,6 +67,7 @@ class SettingsViewModel(
     private suspend fun rescheduleNotifications() {
         try {
             notificationScheduler.rescheduleAllNotifications()
+            notificationScheduler.scheduleRegularReminders()
         } catch (_: Exception) {}
     }
 
@@ -247,7 +247,7 @@ class SettingsViewModel(
         val clip = ClipData.newPlainText("WeekFlow AI Prompt", AiPromptBuilder.buildSystemPrompt(uiState.value.activePreset))
         clipboard.setPrimaryClip(clip)
         viewModelScope.launch {
-            _uiEffect.emit(SettingsUiEffect.ShowToast("Системный промпт v4.3 скопирован в буфер обмена!"))
+            _uiEffect.emit(SettingsUiEffect.ShowToast("Системный промпт v4.4 скопирован в буфер обмена!"))
         }
     }
 
@@ -402,17 +402,12 @@ class SettingsViewModel(
         }
     }
 
-    fun updateRhythmReminders(list: List<RhythmReminder>) {
+    fun updateRegularReminders(reminders: List<RegularReminder>) {
         viewModelScope.launch {
-            preferencesRepository.updateRhythmReminders(list)
-            rescheduleNotifications()
-        }
-    }
-
-    fun updateQuickReminders(list: List<QuickReminder>) {
-        viewModelScope.launch {
-            preferencesRepository.updateQuickReminders(list)
-            rescheduleNotifications()
+            preferencesRepository.updateRegularReminders(reminders)
+            try {
+                notificationScheduler.scheduleRegularReminders()
+            } catch (_: Exception) {}
         }
     }
 }

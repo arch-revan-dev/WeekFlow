@@ -6,8 +6,7 @@ import com.weekflow.app.core.notifications.NotificationScheduler
 import com.weekflow.app.domain.model.Activity
 import com.weekflow.app.domain.model.CalendarEvent
 import com.weekflow.app.domain.model.DayScheduleUiModel
-import com.weekflow.app.domain.model.QuickReminder
-import com.weekflow.app.domain.model.RhythmReminder
+import com.weekflow.app.domain.model.RegularReminder
 import com.weekflow.app.domain.model.SchedulePreset
 import com.weekflow.app.domain.model.Slot
 import com.weekflow.app.domain.model.SubtaskItem
@@ -259,20 +258,11 @@ class CalendarViewModel(
         }
     }
 
-    fun updateRhythmReminders(list: List<RhythmReminder>) {
+    fun updateRegularReminders(reminders: List<RegularReminder>) {
         viewModelScope.launch {
-            preferencesRepository.updateRhythmReminders(list)
+            preferencesRepository.updateRegularReminders(reminders)
             try {
-                notificationScheduler?.rescheduleAllNotifications()
-            } catch (_: Exception) {}
-        }
-    }
-
-    fun updateQuickReminders(list: List<QuickReminder>) {
-        viewModelScope.launch {
-            preferencesRepository.updateQuickReminders(list)
-            try {
-                notificationScheduler?.rescheduleAllNotifications()
+                notificationScheduler?.scheduleRegularReminders()
             } catch (_: Exception) {}
         }
     }

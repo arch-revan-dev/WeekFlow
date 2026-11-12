@@ -37,13 +37,14 @@ enum class AppProfile(
     val defaultLessonTypes: List<String>,
     val defaultCategory: ActivityCategory,
     val defaultBellTimes: List<Pair<String, String>>,
-    val sessionSectionTitle: String,
-    val sessionItemTerm: String,
-    val startSessionLabel: String,
-    val stepPlaceholder: String,
-    val weightOrNoteLabel: String,
-    val weightOrNotePlaceholder: String,
-    val defaultStepTemplates: List<ProfileStepTemplate>
+    val supportsWorkouts: Boolean = false,
+    val sessionSectionTitle: String = "",
+    val sessionItemTerm: String = "",
+    val startSessionLabel: String = "",
+    val stepPlaceholder: String = "",
+    val weightOrNoteLabel: String = "",
+    val weightOrNotePlaceholder: String = "",
+    val defaultStepTemplates: List<ProfileStepTemplate> = emptyList()
 ) {
     STUDY(
         title = "Школа",
@@ -76,18 +77,6 @@ enum class AppProfile(
             "13:20" to "14:05",
             "14:15" to "15:00",
             "15:05" to "15:50"
-        ),
-        sessionSectionTitle = "📚 План урока / Тренажёр заданий",
-        sessionItemTerm = "Задание / Билет",
-        startSessionLabel = "▶ Тренажёр",
-        stepPlaceholder = "например, Билет №5 / Номера 810–814",
-        weightOrNoteLabel = "Формула / Подсказка",
-        weightOrNotePlaceholder = "например, Без калькулятора / Стр. 42",
-        defaultStepTemplates = listOf(
-            ProfileStepTemplate("+ Параграф (15м)", "Чтение и разбор параграфа", durationSeconds = 15 * 60),
-            ProfileStepTemplate("+ Задачи (20м)", "Решение номеров по теме", sets = 3, reps = "2 номера", durationSeconds = 20 * 60, restSeconds = 120),
-            ProfileStepTemplate("+ Правила (10м)", "Повторение формул и правил", sets = 2, reps = "1 круг", durationSeconds = 10 * 60, restSeconds = 60),
-            ProfileStepTemplate("+ Тренировка билета", "Разбор экзаменационного билета", durationSeconds = 15 * 60, weightOrNote = "Тезисы + формулы")
         )
     ),
     UNIVERSITY(
@@ -120,18 +109,6 @@ enum class AppProfile(
             "16:30" to "18:05",
             "18:15" to "19:50",
             "20:00" to "21:35"
-        ),
-        sessionSectionTitle = "🎓 План пары / Лабораторные этапы",
-        sessionItemTerm = "Этап / Вопрос",
-        startSessionLabel = "▶ Практика",
-        stepPlaceholder = "например, Допуск к лабе / Серия замеров",
-        weightOrNoteLabel = "Баллы БРС / Критерий",
-        weightOrNotePlaceholder = "например, 5 баллов / Отчёт в PDF",
-        defaultStepTemplates = listOf(
-            ProfileStepTemplate("+ Допуск (15м)", "Теория и допуск к лабораторной", durationSeconds = 15 * 60, weightOrNote = "2 балла"),
-            ProfileStepTemplate("+ Замеры (3 серии)", "Снятие экспериментальных данных", sets = 3, reps = "5 замеров", durationSeconds = 30 * 60, restSeconds = 60),
-            ProfileStepTemplate("+ Расчёт и графики", "Обработка результатов и погрешностей", durationSeconds = 25 * 60),
-            ProfileStepTemplate("+ Защита отчёта", "Сдача и защита работы", durationSeconds = 15 * 60, weightOrNote = "8 баллов")
         )
     ),
     WORK(
@@ -165,18 +142,6 @@ enum class AppProfile(
             "15:00" to "16:00",
             "16:00" to "17:00",
             "17:00" to "18:00"
-        ),
-        sessionSectionTitle = "💼 Повестка встречи / Таймбоксы",
-        sessionItemTerm = "Пункт повестки",
-        startSessionLabel = "▶ Повестка",
-        stepPlaceholder = "например, Синк по релизам / Демо",
-        weightOrNoteLabel = "Докладчик / Итог",
-        weightOrNotePlaceholder = "например, Тимлид / Решение по API",
-        defaultStepTemplates = listOf(
-            ProfileStepTemplate("+ Дейли-синк (15м)", "Статус команды и блокеры", durationSeconds = 15 * 60, weightOrNote = "По 2 мин на участника"),
-            ProfileStepTemplate("+ Deep Work (50м)", "Фокус-спринт без отвлечений", sets = 2, reps = "1 спринт", durationSeconds = 50 * 60, restSeconds = 10 * 60),
-            ProfileStepTemplate("+ Код-ревью (25м)", "Проверка PR и архитектуры", durationSeconds = 25 * 60),
-            ProfileStepTemplate("+ Итоги и Action Items", "Фиксация договорённостей и дедлайнов", durationSeconds = 10 * 60)
         )
     ),
     HEALTH(
@@ -209,18 +174,19 @@ enum class AppProfile(
             "18:00" to "19:30",
             "20:00" to "21:30"
         ),
-        sessionSectionTitle = "🏋️ Программа упражнений (подходы, повторы, таймер)",
+        supportsWorkouts = true,
+        sessionSectionTitle = "🏋️ Программа упражнений",
         sessionItemTerm = "Упражнение",
         startSessionLabel = "▶ Тренировка",
-        stepPlaceholder = "например, Жим лёжа / Планка / Сведение лопаток",
-        weightOrNoteLabel = "Вес / Инвентарь / Техника",
-        weightOrNotePlaceholder = "например, 60 кг / Гантели / Плавный темп",
+        stepPlaceholder = "например, Жим лёжа / Планка",
+        weightOrNoteLabel = "Вес / Заметка",
+        weightOrNotePlaceholder = "например, 60 кг / Гантели",
         defaultStepTemplates = listOf(
-            ProfileStepTemplate("+ Разминка (7м)", "Суставная разминка и разогрев", durationSeconds = 7 * 60, restSeconds = 30, weightOrNote = "Сверху вниз"),
-            ProfileStepTemplate("+ Силовой сет (3×12)", "Базовое упражнение", sets = 3, reps = "12 повт", restSeconds = 90, weightOrNote = "Рабочий вес"),
-            ProfileStepTemplate("+ Статика / Планка (3×60с)", "Удержание статики", sets = 3, reps = "60 сек", durationSeconds = 60, restSeconds = 45, weightOrNote = "Свой вес"),
-            ProfileStepTemplate("+ Табата HIIT (8×20с)", "Интервальный блок высокой интенсивности", sets = 8, reps = "20 сек", durationSeconds = 20, restSeconds = 10, weightOrNote = "Макс темп"),
-            ProfileStepTemplate("+ Растяжка (5м)", "Заминка и МФР", durationSeconds = 5 * 60, weightOrNote = "Глубокое дыхание")
+            ProfileStepTemplate("+ Разминка (7 мин)", "Суставная разминка и разогрев", durationSeconds = 7 * 60, restSeconds = 30, weightOrNote = "Сверху вниз"),
+            ProfileStepTemplate("+ Силовой сет (3×12)", "Базовое упражнение", sets = 3, reps = "12 повторов", restSeconds = 90, weightOrNote = "Рабочий вес"),
+            ProfileStepTemplate("+ Статика / Планка (3×60 сек)", "Удержание статики", sets = 3, reps = "60 сек", durationSeconds = 60, restSeconds = 45, weightOrNote = "Свой вес"),
+            ProfileStepTemplate("+ Табата HIIT (8×20 сек)", "Интервальный блок высокой интенсивности", sets = 8, reps = "20 сек", durationSeconds = 20, restSeconds = 10, weightOrNote = "Макс темп"),
+            ProfileStepTemplate("+ Растяжка (5 мин)", "Заминка и МФР", durationSeconds = 5 * 60, weightOrNote = "Глубокое дыхание")
         )
     ),
     UNIVERSAL(
@@ -234,7 +200,7 @@ enum class AppProfile(
         pluralGenitive = "занятий",
         taskTerm = "Задачи",
         bySubjectTabLabel = "По курсам",
-        shortItemBadge = "зан.",
+        shortItemBadge = "занятие",
         unnumberedLabel = "Без номера",
         instructorTerm = "Контакт / Преподаватель",
         instructorPlaceholder = "например, Имя преподавателя",
@@ -253,17 +219,6 @@ enum class AppProfile(
             "15:15" to "16:15",
             "17:00" to "18:00",
             "18:30" to "20:00"
-        ),
-        sessionSectionTitle = "⚡ Этапы занятия и таймер",
-        sessionItemTerm = "Этап / Упражнение",
-        startSessionLabel = "▶ Старт",
-        stepPlaceholder = "например, Разминка / Практика / Повторение",
-        weightOrNoteLabel = "Заметка / Параметр",
-        weightOrNotePlaceholder = "например, Ссылка / Инвентарь",
-        defaultStepTemplates = listOf(
-            ProfileStepTemplate("+ Фокус-блок (25м)", "Помодоро-сессия", sets = 2, reps = "25 мин", durationSeconds = 25 * 60, restSeconds = 5 * 60),
-            ProfileStepTemplate("+ Практика (3×10)", "Отработка упражнения", sets = 3, reps = "10 повт", restSeconds = 60),
-            ProfileStepTemplate("+ Разбор / Чтение (20м)", "Изучение материала", durationSeconds = 20 * 60)
         )
     )
 }
@@ -322,4 +277,20 @@ enum class CardDensity(val displayName: String, val verticalPaddingDp: Int) {
     COMPACT("Компактная", 6),
     STANDARD("Стандартная", 10),
     COMFORTABLE("Просторная", 14)
+}
+
+/**
+ * Formats an integer [n] with the matching Russian plural form ([one], [few], [many]).
+ */
+fun pluralize(n: Int, one: String, few: String, many: String): String {
+    val absN = kotlin.math.abs(n)
+    val mod100 = absN % 100
+    val mod10 = absN % 10
+    val word = when {
+        mod100 in 11..14 -> many
+        mod10 == 1 -> one
+        mod10 in 2..4 -> few
+        else -> many
+    }
+    return "$n $word"
 }

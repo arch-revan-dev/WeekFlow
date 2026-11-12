@@ -32,9 +32,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.weekflow.app.core.designsystem.IosBlue
-import com.weekflow.app.core.designsystem.IosGreen
-import com.weekflow.app.core.designsystem.IosOrange
-import com.weekflow.app.core.designsystem.IosPurple
 import com.weekflow.app.core.designsystem.IosRed
 import com.weekflow.app.core.designsystem.LocalIosColors
 import com.weekflow.app.core.util.ColorParser
@@ -126,18 +123,20 @@ fun WeeklyInsightsSheet(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Аналитика и продуктивность",
+                        text = "Аналитика",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = iosColors.textPrimary
                     )
                     Text(
-                        text = "Пресет: ${activePreset.iconEmoji} ${activePreset.name}",
+                        text = "${activePreset.iconEmoji} ${activePreset.name}",
                         fontSize = 12.5.sp,
                         fontWeight = FontWeight.Medium,
-                        color = ColorParser.parseHexColor(activePreset.colorHex)
+                        color = iosColors.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
                 TextButton(onClick = onDismiss) {
@@ -151,24 +150,24 @@ fun WeeklyInsightsSheet(
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 InsightStatCard(
-                    title = "Занятий в нед.",
+                    title = "Занятий",
                     value = "${activeSlots.size}",
-                    subtitle = "${totalWeeklyHours}ч ${remWeeklyMinutes}м всего",
+                    subtitle = "${totalWeeklyHours}ч ${remWeeklyMinutes}м",
                     accentColor = IosBlue,
                     modifier = Modifier.weight(1f)
                 )
                 InsightStatCard(
-                    title = "Выполнено задач",
+                    title = "Выполнено",
                     value = "${(completionRatio * 100).roundToInt()}%",
-                    subtitle = "$completedCount из ${presetTasks.size}",
-                    accentColor = IosGreen,
+                    subtitle = "$completedCount / ${presetTasks.size}",
+                    accentColor = IosBlue,
                     modifier = Modifier.weight(1f)
                 )
                 InsightStatCard(
-                    title = "Фокус-сессии",
+                    title = "Фокус",
                     value = "${preferences.focusSessionsCompleted}",
-                    subtitle = "${preferences.focusMinutesTotal} мин в фокусе",
-                    accentColor = IosPurple,
+                    subtitle = "${preferences.focusMinutesTotal} мин",
+                    accentColor = IosBlue,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -188,7 +187,7 @@ fun WeeklyInsightsSheet(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "РАСПРЕДЕЛЕНИЕ ЗАНЯТИЙ ПО ДНЯМ",
+                            text = "ПО ДНЯМ НЕДЕЛИ",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = iosColors.textSecondary
@@ -198,7 +197,7 @@ fun WeeklyInsightsSheet(
                                 text = "Пик: ${dayNames[busiestDayEntry.key]} (${busiestDayEntry.value})",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = IosOrange
+                                color = IosBlue
                             )
                         }
                     }
@@ -217,8 +216,8 @@ fun WeeklyInsightsSheet(
                             val barColor = when {
                                 count == 0 -> iosColors.separator
                                 isToday -> IosBlue
-                                count == busiestDayEntry?.value -> IosOrange
-                                else -> IosBlue.copy(alpha = 0.65f)
+                                count == busiestDayEntry?.value -> IosBlue.copy(alpha = 0.85f)
+                                else -> IosBlue.copy(alpha = 0.45f)
                             }
 
                             Column(
@@ -263,7 +262,7 @@ fun WeeklyInsightsSheet(
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "ПРОГРЕСС ПО ЗАДАЧАМ",
+                        text = "ЗАДАЧИ",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = iosColors.textSecondary
@@ -274,7 +273,7 @@ fun WeeklyInsightsSheet(
                             .fillMaxWidth()
                             .height(8.dp)
                             .clip(RoundedCornerShape(4.dp)),
-                        color = IosGreen,
+                        color = IosBlue,
                         trackColor = iosColors.card
                     )
                     Row(
@@ -297,7 +296,7 @@ fun WeeklyInsightsSheet(
                             text = "Готово: $completedCount",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = IosGreen
+                            color = IosBlue
                         )
                     }
                 }
@@ -327,7 +326,7 @@ fun WeeklyInsightsSheet(
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(
-                                text = "ТОП ПРЕДМЕТОВ ПО НАГРУЗКЕ В НЕДЕЛЮ",
+                                text = "НАГРУЗКА",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = iosColors.textSecondary
@@ -362,7 +361,7 @@ fun WeeklyInsightsSheet(
                                     }
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "$count зан. • $hoursStr",
+                                        text = "${pluralizeRu(count, "занятие", "занятия", "занятий")} • $hoursStr",
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = iosColors.textSecondary
@@ -395,10 +394,11 @@ private fun InsightStatCard(
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 text = title,
-                fontSize = 10.5.sp,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.Medium,
                 color = iosColors.textSecondary,
-                maxLines = 1
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = value,
@@ -408,7 +408,7 @@ private fun InsightStatCard(
             )
             Text(
                 text = subtitle,
-                fontSize = 10.sp,
+                fontSize = 11.sp,
                 color = iosColors.textSecondary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
