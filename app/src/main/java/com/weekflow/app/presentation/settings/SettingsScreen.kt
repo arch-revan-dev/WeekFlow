@@ -1,5 +1,6 @@
 package com.weekflow.app.presentation.settings
 
+import android.Manifest
 import android.app.AlarmManager
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -9,6 +10,8 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -56,9 +59,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -73,6 +78,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.weekflow.app.core.notifications.NotificationHelper
+import com.weekflow.app.core.notifications.NotificationScheduler
 import com.weekflow.app.core.designsystem.IosBlue
 import com.weekflow.app.core.designsystem.IosGreen
 import com.weekflow.app.core.designsystem.IosOrange
@@ -153,7 +163,10 @@ fun SettingsScreen(
         )
     }
 
-    val alarmManager = remember { context.getSystemService(Context.ALARM_SERVICE) as AlarmManager }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val notificationHelper = remember(context) { NotificationHelper(context) }
+    val alarmManager = remember(context) { context.getSystemService(Context.ALARM_SERVICE) as AlarmManager }
+    var hasNotifPermission by remember { mutableStateOf(notificationHelper.hasNotificationPermission()) }
     var canScheduleExact by remember {
         mutableStateOf(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -162,6 +175,40 @@ fun SettingsScreen(
                 true
             }
         )
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val prevNotif = hasNotifPermission
+                val prevExact = canScheduleExact
+                val nowNotif = notificationHelper.hasNotificationPermission()
+                val nowExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
+                hasNotifPermission = nowNotif
+                canScheduleExact = nowExact
+                if ((!prevNotif && nowNotif || !prevExact && nowExact) && uiState.preferences.notificationsEnabled) {
+                    viewModel.onToggleNotifications(true)
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    var lastPromptLaunchAtMs by remember { mutableLongStateOf(0L) }
+    val notifPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val nowGranted = granted || notificationHelper.hasNotificationPermission()
+        hasNotifPermission = nowGranted
+        if (nowGranted) {
+            viewModel.onToggleNotifications(true)
+        } else if (
+            NotificationScheduler.shouldOpenNotificationSettingsInsteadOfPrompt(context) &&
+            System.currentTimeMillis() - lastPromptLaunchAtMs < 400L
+        ) {
+            NotificationScheduler.openAppNotificationSettings(context)
+        }
     }
 
     // Effects collector for Toasts and Share Sheet
@@ -398,6 +445,50 @@ fun SettingsScreen(
                     )
 
                     if (uiState.preferences.notificationsEnabled) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotifPermission) {
+                            SettingsDivider()
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(IosOrange.copy(alpha = 0.09f))
+                                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.WarningAmber,
+                                        contentDescription = null,
+                                        tint = IosOrange,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Нет разрешения на уведомления",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = iosColors.textPrimary
+                                    )
+                                }
+                                TextButton(
+                                    onClick = {
+                                        if (NotificationScheduler.shouldOpenNotificationSettingsInsteadOfPrompt(context)) {
+                                            NotificationScheduler.openAppNotificationSettings(context)
+                                        } else {
+                                            NotificationScheduler.markNotificationPermissionRequested(context)
+                                            lastPromptLaunchAtMs = System.currentTimeMillis()
+                                            notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                        }
+                                    }
+                                ) {
+                                    Text("Разрешить", fontWeight = FontWeight.SemiBold, color = IosBlue)
+                                }
+                            }
+                        }
+
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !canScheduleExact) {
                             SettingsDivider()
                             Row(

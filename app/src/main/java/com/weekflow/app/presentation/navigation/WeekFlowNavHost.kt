@@ -101,7 +101,11 @@ sealed interface ActiveSheet {
         val defaultEndTime: String? = null,
         val defaultActivityId: String? = null
     ) : ActiveSheet
-    data class EditSlot(val slotId: String, val defaultActivityId: String? = null) : ActiveSheet
+    data class EditSlot(
+        val slotId: String,
+        val dateIso: String,
+        val defaultActivityId: String? = null
+    ) : ActiveSheet
     data class AddTask(val activityId: String?, val slotId: String?, val date: LocalDate) : ActiveSheet
     data class ViewTask(val taskId: String, val fallbackTask: Task) : ActiveSheet
     data class EditTask(val task: Task) : ActiveSheet
@@ -284,9 +288,9 @@ fun WeekFlowNavHost(
                                     defaultEndTime = endTime
                                 )
                             },
-                            onEditSlot = { slotId ->
+                            onEditSlot = { slotId, dateIso ->
                                 returnSheetAfterActivity = null
-                                activeSheet = ActiveSheet.EditSlot(slotId)
+                                activeSheet = ActiveSheet.EditSlot(slotId, dateIso)
                             },
                             onAddNewTaskForSlot = { actId, slotId, date ->
                                 returnSheetAfterActivity = null
@@ -317,9 +321,9 @@ fun WeekFlowNavHost(
                                 returnSheetAfterActivity = null
                                 activeSheet = ActiveSheet.EditEvent(event)
                             },
-                            onEditSlot = { slotId ->
+                            onEditSlot = { slotId, dateIso ->
                                 returnSheetAfterActivity = null
-                                activeSheet = ActiveSheet.EditSlot(slotId)
+                                activeSheet = ActiveSheet.EditSlot(slotId, dateIso)
                             },
                             onAddNewTaskForSlot = { actId, slotId, date ->
                                 returnSheetAfterActivity = null
@@ -412,6 +416,7 @@ fun WeekFlowNavHost(
                             initialSlot = slot,
                             defaultDayOfWeek = slot.dayOfWeek,
                             defaultActivityId = sheet.defaultActivityId,
+                            targetDateIso = sheet.dateIso,
                             activities = slotActivities,
                             existingSlots = slotSlots,
                             isTwoWeekCycleEnabled = scheduleUiState.preferences.isTwoWeekCycleEnabled,

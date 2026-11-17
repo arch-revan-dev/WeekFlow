@@ -80,7 +80,7 @@ fun TimelineGridView(
     activities: List<Activity>,
     activeWeekCycle: WeekCycle,
     isTwoWeekCycleEnabled: Boolean,
-    onEditSlot: (slotId: String) -> Unit,
+    onEditSlot: (slotId: String, dateIso: String) -> Unit,
     onEditEvent: (CalendarEvent) -> Unit,
     onAddSlotWithTime: (startTime: String, endTime: String) -> Unit,
     onMoveSlotTime: ((slot: Slot, newStartTime: String, newEndTime: String) -> Unit)? = null,
@@ -443,7 +443,7 @@ fun TimelineGridView(
                             }
                             .clickable {
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                onEditSlot(slot.id)
+                                onEditSlot(slot.id, selectedDate.toString())
                             }
                             .padding(horizontal = horizPadDp, vertical = vertPadDp)
                     ) {
@@ -481,7 +481,7 @@ fun TimelineGridView(
 
                             val loc = slot.customLocation?.takeIf { it.isNotBlank() } ?: act?.defaultLocation
                             val gradeText = if (appProfile.supportsGrades && itemHeightDp >= 44f && itemWidth >= 56.dp) {
-                                slot.grade?.trim()?.takeIf { it.isNotBlank() }
+                                slot.gradeForDate(selectedDate)
                             } else {
                                 null
                             }

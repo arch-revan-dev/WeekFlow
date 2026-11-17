@@ -70,6 +70,7 @@ fun LessonSlotCard(
     showProgressBar: Boolean = true,
     isTwoWeekCycleEnabled: Boolean = false,
     isToday: Boolean = false,
+    slotGrade: String? = null,
     onStartFocusTimer: (() -> Unit)? = null,
     onStartInteractiveSession: (() -> Unit)? = null
 ) {
@@ -376,7 +377,7 @@ fun LessonSlotCard(
                         }
 
                         val gradeValue = if (appProfile.supportsGrades) {
-                            details.slot.grade?.trim()?.takeIf { it.isNotBlank() }
+                            slotGrade?.trim()?.takeIf { it.isNotBlank() }
                         } else {
                             null
                         }

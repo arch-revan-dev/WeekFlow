@@ -65,13 +65,17 @@ import com.weekflow.app.core.designsystem.components.IosWheelPicker
 import com.weekflow.app.core.designsystem.iosPrimaryButtonColors
 import com.weekflow.app.core.localization.LocalAppProfile
 import com.weekflow.app.core.util.ColorParser
+import com.weekflow.app.core.util.DateTimeUtils
 import com.weekflow.app.domain.model.Activity
 import com.weekflow.app.domain.model.SchedulePreset
 import com.weekflow.app.domain.model.Slot
 import com.weekflow.app.domain.model.SubtaskItem
 import com.weekflow.app.domain.model.WeekCycle
+import java.time.DayOfWeek
 import java.time.Duration
+import java.time.LocalDate
 import java.time.LocalTime
+import java.time.temporal.TemporalAdjusters
 import java.util.UUID
 import kotlin.math.abs
 
@@ -317,6 +321,7 @@ fun SlotEditorSheet(
     defaultStartTime: String? = null,
     defaultEndTime: String? = null,
     defaultActivityId: String? = null,
+    targetDateIso: String? = null,
     existingSlots: List<Slot> = emptyList(),
     presetId: String = SchedulePreset.DEFAULT_ID,
     modifier: Modifier = Modifier
@@ -385,7 +390,26 @@ fun SlotEditorSheet(
     var customLocation by remember(initialSlot?.id) { mutableStateOf(initialSlot?.customLocation ?: "") }
     var customInstructor by remember(initialSlot?.id) { mutableStateOf(initialSlot?.customInstructor ?: "") }
     var customType by remember(initialSlot?.id) { mutableStateOf(initialSlot?.customType ?: "") }
-    var grade by remember(initialSlot?.id) { mutableStateOf(initialSlot?.grade) }
+
+    val anchorDate = remember(targetDateIso) {
+        targetDateIso?.trim()?.takeIf { it.isNotEmpty() }?.let {
+            try { LocalDate.parse(it) } catch (_: Exception) { null }
+        }
+    }
+    val weekMonday = remember(anchorDate) {
+        (anchorDate ?: LocalDate.now()).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+    }
+    val effectiveDate = remember(anchorDate, weekMonday, dayOfWeek) {
+        if (anchorDate != null && anchorDate.dayOfWeek.value == dayOfWeek) {
+            anchorDate
+        } else {
+            weekMonday.plusDays((dayOfWeek - 1).coerceIn(0, 6).toLong())
+        }
+    }
+    val effectiveDateIso = effectiveDate.toString()
+    var grade by remember(initialSlot?.id, effectiveDateIso) {
+        mutableStateOf(initialSlot?.gradeForDate(effectiveDateIso))
+    }
 
     // HEALTH workout exercises ONLY
     val setOptions = remember { (1..20).toList() }
@@ -1091,6 +1115,7 @@ fun SlotEditorSheet(
             if (appProfile.supportsGrades) {
                 SlotGradeSection(
                     grade = grade,
+                    dateLabel = DateTimeUtils.formatShortDayMonth(effectiveDate),
                     onGradeChange = { grade = it }
                 )
             }
@@ -1142,7 +1167,7 @@ fun SlotEditorSheet(
                                                 periodOrder = if (appProfile.defaultUsePeriodNumbers) periodOrder else periodOrder.coerceAtLeast(1),
                                                 presetId = initialSlot.presetId.ifBlank { presetId },
                                                 sessionItems = if (appProfile.supportsWorkouts) sessionItems else emptyList(),
-                                                grade = null
+                                                gradesByDate = emptyMap()
                                             )
                                             if (onDuplicateSlot != null) {
                                                 onDuplicateSlot(duplicated, day)
@@ -1171,7 +1196,7 @@ fun SlotEditorSheet(
             Button(
                 onClick = {
                     if (selectedActivityId.isNotBlank()) {
-                        val slot = Slot(
+                        val baseSlot = Slot(
                             id = initialSlot?.id ?: UUID.randomUUID().toString(),
                             activityTypeId = selectedActivityId,
                             dayOfWeek = dayOfWeek,
@@ -1185,8 +1210,13 @@ fun SlotEditorSheet(
                             periodOrder = if (appProfile.defaultUsePeriodNumbers) periodOrder else periodOrder.coerceAtLeast(1),
                             presetId = initialSlot?.presetId?.ifBlank { presetId } ?: presetId,
                             sessionItems = if (appProfile.supportsWorkouts) sessionItems else emptyList(),
-                            grade = if (appProfile.supportsGrades) grade?.trim()?.takeIf { it.isNotBlank() } else null
+                            gradesByDate = initialSlot?.gradesByDate ?: emptyMap()
                         )
+                        val slot = if (appProfile.supportsGrades) {
+                            baseSlot.withGradeForDate(effectiveDateIso, grade)
+                        } else {
+                            baseSlot
+                        }
                         onSave(slot)
                         onDismiss()
                     }
@@ -1250,6 +1280,7 @@ private val QUICK_SLOT_GRADE_OPTIONS = listOf("5", "4", "3", "2", "Зачёт")
 @Composable
 private fun SlotGradeSection(
     grade: String?,
+    dateLabel: String,
     onGradeChange: (String?) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -1286,6 +1317,21 @@ private fun SlotGradeSection(
                     fontWeight = FontWeight.Bold,
                     color = iosColors.textPrimary
                 )
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(iosColors.card)
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = dateLabel,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = iosColors.textSecondary,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
             }
 
             if (cleanGrade != null) {

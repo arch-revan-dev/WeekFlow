@@ -9,6 +9,9 @@ import com.weekflow.app.domain.model.TaskDto
 import com.weekflow.app.domain.model.WeekCycle
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.time.DayOfWeek
+import java.time.LocalDate
+import java.time.temporal.TemporalAdjusters
 import java.util.UUID
 
 sealed interface ValidationResult {
@@ -133,6 +136,29 @@ object JsonImportExportManager {
             }
 
             val slotId = slot.id.ifBlank { "slot_" + UUID.randomUUID().toString().take(8) }
+            val sanitizedGradesByDate = slot.gradesByDate.entries
+                .mapNotNull { (k, v) ->
+                    val cleanDate = k.trim()
+                    val cleanGrade = v.trim()
+                    if (dateRegex.matches(cleanDate) && cleanGrade.isNotEmpty()) {
+                        cleanDate to cleanGrade
+                    } else {
+                        null
+                    }
+                }
+                .toMap()
+                .ifEmpty {
+                    val legacyGrade = slot.grade?.trim()?.takeIf { it.isNotEmpty() }
+                    if (legacyGrade != null) {
+                        val targetDate = LocalDate.now()
+                            .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+                            .plusDays((slot.dayOfWeek - 1).toLong())
+                            .toString()
+                        mapOf(targetDate to legacyGrade)
+                    } else {
+                        emptyMap()
+                    }
+                }
 
             validSlots.add(
                 slot.copy(
@@ -141,7 +167,8 @@ object JsonImportExportManager {
                     startTime = normStartTime,
                     endTime = normEndTime,
                     periodOrder = slot.periodOrder.coerceAtLeast(0),
-                    grade = slot.grade?.trim()?.takeIf { it.isNotEmpty() }
+                    gradesByDate = sanitizedGradesByDate,
+                    grade = null
                 )
             )
         }

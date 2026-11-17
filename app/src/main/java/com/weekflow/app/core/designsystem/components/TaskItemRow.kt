@@ -32,7 +32,6 @@ import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Checklist
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Edit
@@ -41,7 +40,6 @@ import androidx.compose.material.icons.rounded.HourglassEmpty
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
-import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material.icons.rounded.Update
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -88,6 +86,8 @@ fun TaskItemRow(
     onPostponeTomorrowClick: (() -> Unit)? = null,
     onDeleteClick: (() -> Unit)? = null,
     onToggleSubtask: ((String) -> Unit)? = null,
+    isActionsVisible: Boolean? = null,
+    onActionsVisibleChange: ((Boolean) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val iosColors = LocalIosColors.current
@@ -96,7 +96,14 @@ fun TaskItemRow(
     val today = LocalDate.now()
 
     var isExpanded by remember(task.id) { mutableStateOf(false) }
-    var isActionsVisible by remember(task.id) { mutableStateOf(false) }
+    var localActionsVisible by remember(task.id) { mutableStateOf(false) }
+    val effectiveActionsVisible = isActionsVisible ?: localActionsVisible
+    fun setActionsVisible(visible: Boolean) {
+        if (isActionsVisible == null) {
+            localActionsVisible = visible
+        }
+        onActionsVisibleChange?.invoke(visible)
+    }
     var isTitleOverflowing by remember(task.id, task.title) { mutableStateOf(false) }
     var isNoteOverflowing by remember(task.id, task.note) { mutableStateOf(false) }
     val hasLongContent = isTitleOverflowing || isNoteOverflowing || task.subtasks.size > 4 || isExpanded
@@ -133,22 +140,22 @@ fun TaskItemRow(
             .background(cardSurface)
             .border(
                 BorderStroke(
-                    width = if (isActionsVisible) 1.2.dp else 0.8.dp,
-                    color = if (isActionsVisible) IosBlue.copy(alpha = 0.7f) else cardBorderColor
+                    width = if (effectiveActionsVisible) 1.2.dp else 0.8.dp,
+                    color = if (effectiveActionsVisible) IosBlue.copy(alpha = 0.7f) else cardBorderColor
                 ),
                 RoundedCornerShape(14.dp)
             )
             .combinedClickable(
                 onClick = {
-                    if (isActionsVisible) {
-                        isActionsVisible = false
+                    if (effectiveActionsVisible) {
+                        setActionsVisible(false)
                     } else {
                         onClick()
                     }
                 },
                 onLongClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    isActionsVisible = !isActionsVisible
+                    setActionsVisible(!effectiveActionsVisible)
                 }
             )
             .alpha(contentAlpha)
@@ -448,7 +455,7 @@ fun TaskItemRow(
             }
 
             // Bottom icon-only action bar evenly distributed across full card width on long-press
-            AnimatedVisibility(visible = isActionsVisible) {
+            AnimatedVisibility(visible = effectiveActionsVisible) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Spacer(modifier = Modifier.height(10.dp))
                     Box(
@@ -463,18 +470,6 @@ fun TaskItemRow(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        TaskQuickActionIcon(
-                            icon = if (task.isCompleted) Icons.Rounded.Replay else Icons.Rounded.Check,
-                            contentDescription = if (task.isCompleted) "В работу" else "Выполнено",
-                            tint = if (task.isCompleted) IosOrange else IosBlue,
-                            backgroundColor = iosColors.cardSecondary,
-                            onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                isActionsVisible = false
-                                onToggleCompleted()
-                            },
-                            modifier = Modifier.weight(1f)
-                        )
                         if (onEditClick != null) {
                             TaskQuickActionIcon(
                                 icon = Icons.Rounded.Edit,
@@ -483,7 +478,7 @@ fun TaskItemRow(
                                 backgroundColor = iosColors.cardSecondary,
                                 onClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    isActionsVisible = false
+                                    setActionsVisible(false)
                                     onEditClick()
                                 },
                                 modifier = Modifier.weight(1f)
@@ -496,7 +491,7 @@ fun TaskItemRow(
                             backgroundColor = iosColors.cardSecondary,
                             onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                isActionsVisible = false
+                                setActionsVisible(false)
                                 if (onCopyClick != null) {
                                     onCopyClick()
                                 } else {
@@ -530,7 +525,7 @@ fun TaskItemRow(
                                 backgroundColor = iosColors.cardSecondary,
                                 onClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    isActionsVisible = false
+                                    setActionsVisible(false)
                                     onFocusTimerClick()
                                 },
                                 modifier = Modifier.weight(1f)
@@ -539,12 +534,12 @@ fun TaskItemRow(
                         if (onPostponeTomorrowClick != null && !task.isCompleted) {
                             TaskQuickActionIcon(
                                 icon = Icons.Rounded.Update,
-                                contentDescription = "Завтра",
+                                contentDescription = "Перенести на следующее занятие",
                                 tint = IosBlue,
                                 backgroundColor = iosColors.cardSecondary,
                                 onClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    isActionsVisible = false
+                                    setActionsVisible(false)
                                     onPostponeTomorrowClick()
                                 },
                                 modifier = Modifier.weight(1f)
@@ -558,22 +553,12 @@ fun TaskItemRow(
                                 backgroundColor = IosRed.copy(alpha = 0.10f),
                                 onClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    isActionsVisible = false
+                                    setActionsVisible(false)
                                     onDeleteClick()
                                 },
                                 modifier = Modifier.weight(1f)
                             )
                         }
-                        TaskQuickActionIcon(
-                            icon = Icons.Rounded.Close,
-                            contentDescription = "Закрыть",
-                            tint = iosColors.textSecondary,
-                            backgroundColor = iosColors.cardSecondary,
-                            onClick = {
-                                isActionsVisible = false
-                            },
-                            modifier = Modifier.weight(1f)
-                        )
                     }
                 }
             }

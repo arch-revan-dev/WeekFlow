@@ -134,17 +134,27 @@ class ScheduleAlarmReceiver : BroadcastReceiver(), KoinComponent {
                             null
                         }
                         if (preferences.notificationsEnabled && (reminderId == null || reminder != null)) {
+                            val notifId = intent.getIntExtra(
+                                EXTRA_NOTIFICATION_ID,
+                                ("regular_" + (reminderId ?: "")).hashCode()
+                            )
                             val title = reminder?.title?.ifBlank { "Напоминание" }
                                 ?: intent.getStringExtra(EXTRA_TITLE)
                                 ?: "Напоминание"
                             val message = intent.getStringExtra(EXTRA_MESSAGE) ?: "Регулярное напоминание"
-                            notificationHelper.showTaskDeadlinesNotification(title, message)
+                            notificationHelper.showRegularReminderNotification(
+                                id = notifId,
+                                title = title,
+                                message = message
+                            )
                         }
                     }
                 }
 
-                // Guaranteed daily rescheduling of all alarms for the next 48h
-                notificationScheduler.rescheduleAllNotifications()
+                // Guaranteed daily rescheduling of all alarms for the next 48h.
+                // Guard +2s when a regular reminder just fired so an early OS wakeup never re-schedules the same tick.
+                val minLeadSeconds = if (alarmType == ALARM_TYPE_REGULAR_REMINDER) 2L else 0L
+                notificationScheduler.rescheduleAllNotifications(minLeadSeconds = minLeadSeconds)
             } catch (_: Exception) {
             } finally {
                 pendingResult.finish()

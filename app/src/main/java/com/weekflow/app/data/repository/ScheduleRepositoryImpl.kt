@@ -31,6 +31,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import java.io.File
+import java.time.DayOfWeek
+import java.time.LocalDate
+import java.time.temporal.TemporalAdjusters
 import java.util.UUID
 
 @Serializable
@@ -162,7 +165,7 @@ class ScheduleRepositoryImpl(
                         periodOrder = slot.periodOrder,
                         presetId = targetPreset,
                         sessionItems = slot.sessionItems,
-                        grade = slot.grade?.trim()?.takeIf { it.isNotEmpty() }
+                        gradesByDate = resolveSlotGrades(slot)
                     )
                 )
             }
@@ -421,6 +424,24 @@ class ScheduleRepositoryImpl(
         return if (rawId.startsWith(prefix)) rawId else "$prefix$rawId"
     }
 
+    private fun resolveSlotGrades(slot: SlotDto): Map<String, String> {
+        val cleaned = slot.gradesByDate.entries
+            .mapNotNull { (k, v) ->
+                val dateKey = k.trim()
+                val gradeVal = v.trim()
+                if (dateKey.isNotEmpty() && gradeVal.isNotEmpty()) dateKey to gradeVal else null
+            }
+            .toMap()
+        if (cleaned.isNotEmpty()) return cleaned
+        val legacyGrade = slot.grade?.trim()?.takeIf { it.isNotEmpty() } ?: return emptyMap()
+        val dayOffset = (slot.dayOfWeek.coerceIn(1, 7) - 1).toLong()
+        val targetDate = LocalDate.now()
+            .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+            .plusDays(dayOffset)
+            .toString()
+        return mapOf(targetDate to legacyGrade)
+    }
+
     override suspend fun replaceAllSchedule(payload: CleanSchedulePayload, presetId: String) {
         val targetPreset = presetId.ifBlank { SchedulePreset.DEFAULT_ID }
         saveUndoSnapshot(targetPreset, "Замена расписания")
@@ -467,7 +488,7 @@ class ScheduleRepositoryImpl(
                         periodOrder = slot.periodOrder,
                         presetId = targetPreset,
                         sessionItems = slot.sessionItems,
-                        grade = slot.grade?.trim()?.takeIf { it.isNotEmpty() }
+                        gradesByDate = resolveSlotGrades(slot)
                     )
                 )
             }
@@ -546,7 +567,7 @@ class ScheduleRepositoryImpl(
                         periodOrder = slot.periodOrder,
                         presetId = targetPreset,
                         sessionItems = slot.sessionItems,
-                        grade = slot.grade?.trim()?.takeIf { it.isNotEmpty() }
+                        gradesByDate = resolveSlotGrades(slot)
                     )
                 )
             }
@@ -626,7 +647,8 @@ class ScheduleRepositoryImpl(
                     customNote = domain.customNote,
                     periodOrder = domain.periodOrder,
                     sessionItems = domain.sessionItems,
-                    grade = domain.grade
+                    gradesByDate = domain.gradesByDate,
+                    grade = null
                 )
             }
 

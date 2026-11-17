@@ -67,6 +67,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.changedToDownIgnoreConsumed
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -88,6 +91,7 @@ import com.weekflow.app.core.designsystem.components.UndoIncidentBanner
 import com.weekflow.app.core.localization.LocalAppProfile
 import com.weekflow.app.core.util.ColorParser
 import com.weekflow.app.core.util.DateTimeUtils
+import com.weekflow.app.domain.model.Activity
 import com.weekflow.app.domain.model.Task
 import com.weekflow.app.domain.model.TaskPriority
 import com.weekflow.app.domain.model.WeekCycle
@@ -134,8 +138,73 @@ fun TasksScreen(
     var showPresetSheet by remember { mutableStateOf(false) }
     var showInsightsSheet by remember { mutableStateOf(false) }
     var showRhythmSheet by remember { mutableStateOf(false) }
+    var expandedActionsTaskId by remember { mutableStateOf<String?>(null) }
 
     val presetColor = ColorParser.parseHexColor(uiState.activePreset.colorHex)
+
+    @Composable
+    fun renderTaskRow(
+        task: Task,
+        linkedActivity: Activity?,
+        isCompletedTab: Boolean = false
+    ) {
+        TaskItemRow(
+            task = task,
+            linkedActivity = linkedActivity,
+            isActionsVisible = expandedActionsTaskId == task.id,
+            onActionsVisibleChange = { visible ->
+                expandedActionsTaskId = when {
+                    visible -> task.id
+                    expandedActionsTaskId == task.id -> null
+                    else -> expandedActionsTaskId
+                }
+            },
+            onToggleCompleted = {
+                if (expandedActionsTaskId != null) {
+                    expandedActionsTaskId = null
+                } else {
+                    viewModel.toggleTask(task)
+                }
+            },
+            onClick = {
+                if (expandedActionsTaskId != null) {
+                    expandedActionsTaskId = null
+                } else {
+                    onViewTask(task)
+                }
+            },
+            onEditClick = { onEditTask(task) },
+            onFocusTimerClick = if (isCompletedTab) null else {
+                {
+                    focusTimerTitle = task.title
+                    showFocusTimer = true
+                }
+            },
+            onPostponeTomorrowClick = if (isCompletedTab) null else {
+                {
+                    viewModel.postponeToNextLesson(task) { targetDate, subjectName ->
+                        val dateLabel = DateTimeUtils.formatDateWithDay(targetDate).lowercase()
+                        val toastText = if (!subjectName.isNullOrBlank()) {
+                            "Перенесено на $dateLabel ($subjectName)"
+                        } else {
+                            "Перенесено на $dateLabel"
+                        }
+                        Toast.makeText(context, toastText, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
+            onDeleteClick = { viewModel.deleteTask(task.id) },
+            onToggleSubtask = if (isCompletedTab) null else {
+                { subId ->
+                    if (expandedActionsTaskId != null) {
+                        expandedActionsTaskId = null
+                    } else {
+                        viewModel.toggleSubtask(task, subId)
+                    }
+                }
+            }
+        )
+    }
 
     CompositionLocalProvider(LocalAppProfile provides appProfile) {
         if (showRhythmSheet) {
@@ -179,7 +248,38 @@ fun TasksScreen(
         }
 
         Scaffold(
-            modifier = modifier.fillMaxSize(),
+            modifier = modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val downEvent = awaitPointerEvent(PointerEventPass.Final)
+                            val down = downEvent.changes.firstOrNull { it.changedToDownIgnoreConsumed() } ?: continue
+                            val downTaskId = expandedActionsTaskId ?: continue
+                            val downPos = down.position
+                            val downTime = down.uptimeMillis
+                            val touchSlop = viewConfiguration.touchSlop
+                            val longPressTimeout = viewConfiguration.longPressTimeoutMillis
+
+                            var cancelled = false
+                            while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Final)
+                                val change = event.changes.firstOrNull { it.id == down.id }
+                                if (change == null || (change.position - downPos).getDistance() > touchSlop) {
+                                    cancelled = true
+                                    break
+                                }
+                                if (!change.pressed) {
+                                    val isShortTap = (change.uptimeMillis - downTime) < longPressTimeout
+                                    if (!cancelled && isShortTap && expandedActionsTaskId == downTaskId) {
+                                        expandedActionsTaskId = null
+                                    }
+                                    break
+                                }
+                            }
+                        }
+                    }
+                },
             containerColor = iosColors.background,
             contentWindowInsets = WindowInsets.statusBars,
             topBar = {
@@ -422,7 +522,10 @@ fun TasksScreen(
                 IosSegmentedControl(
                     items = listOf("Актуальные", "По дням", appProfile.bySubjectTabLabel, "Готовые"),
                     selectedIndex = uiState.selectedTab,
-                    onItemSelected = { viewModel.selectTab(it) },
+                    onItemSelected = {
+                        expandedActionsTaskId = null
+                        viewModel.selectTab(it)
+                    },
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
                 )
 
@@ -531,19 +634,9 @@ fun TasksScreen(
                                     TaskSectionHeader(title = "Просроченные", color = IosRed, count = uiState.overdueTasks.size)
                                 }
                                 items(uiState.overdueTasks, key = { "task_${it.id}" }) { task ->
-                                    TaskItemRow(
+                                    renderTaskRow(
                                         task = task,
-                                        linkedActivity = task.linkedActivityId?.let { activityMap[it] },
-                                        onToggleCompleted = { viewModel.toggleTask(task) },
-                                        onClick = { onViewTask(task) },
-                                        onEditClick = { onEditTask(task) },
-                                        onFocusTimerClick = {
-                                            focusTimerTitle = task.title
-                                            showFocusTimer = true
-                                        },
-                                        onPostponeTomorrowClick = { viewModel.postponeToTomorrow(task) },
-                                        onDeleteClick = { viewModel.deleteTask(task.id) },
-                                        onToggleSubtask = { subId -> viewModel.toggleSubtask(task, subId) }
+                                        linkedActivity = task.linkedActivityId?.let { activityMap[it] }
                                     )
                                 }
                             }
@@ -553,19 +646,9 @@ fun TasksScreen(
                                     TaskSectionHeader(title = "Сегодня и завтра", color = IosOrange, count = uiState.todayAndTomorrowTasks.size)
                                 }
                                 items(uiState.todayAndTomorrowTasks, key = { "task_${it.id}" }) { task ->
-                                    TaskItemRow(
+                                    renderTaskRow(
                                         task = task,
-                                        linkedActivity = task.linkedActivityId?.let { activityMap[it] },
-                                        onToggleCompleted = { viewModel.toggleTask(task) },
-                                        onClick = { onViewTask(task) },
-                                        onEditClick = { onEditTask(task) },
-                                        onFocusTimerClick = {
-                                            focusTimerTitle = task.title
-                                            showFocusTimer = true
-                                        },
-                                        onPostponeTomorrowClick = { viewModel.postponeToTomorrow(task) },
-                                        onDeleteClick = { viewModel.deleteTask(task.id) },
-                                        onToggleSubtask = { subId -> viewModel.toggleSubtask(task, subId) }
+                                        linkedActivity = task.linkedActivityId?.let { activityMap[it] }
                                     )
                                 }
                             }
@@ -575,19 +658,9 @@ fun TasksScreen(
                                     TaskSectionHeader(title = "Ближайшие 7 дней", color = IosBlue, count = uiState.nextWeekTasks.size)
                                 }
                                 items(uiState.nextWeekTasks, key = { "task_${it.id}" }) { task ->
-                                    TaskItemRow(
+                                    renderTaskRow(
                                         task = task,
-                                        linkedActivity = task.linkedActivityId?.let { activityMap[it] },
-                                        onToggleCompleted = { viewModel.toggleTask(task) },
-                                        onClick = { onViewTask(task) },
-                                        onEditClick = { onEditTask(task) },
-                                        onFocusTimerClick = {
-                                            focusTimerTitle = task.title
-                                            showFocusTimer = true
-                                        },
-                                        onPostponeTomorrowClick = { viewModel.postponeToTomorrow(task) },
-                                        onDeleteClick = { viewModel.deleteTask(task.id) },
-                                        onToggleSubtask = { subId -> viewModel.toggleSubtask(task, subId) }
+                                        linkedActivity = task.linkedActivityId?.let { activityMap[it] }
                                     )
                                 }
                             }
@@ -597,19 +670,9 @@ fun TasksScreen(
                                     TaskSectionHeader(title = "Позже / Без срока", color = iosColors.textSecondary, count = uiState.laterTasks.size)
                                 }
                                 items(uiState.laterTasks, key = { "task_${it.id}" }) { task ->
-                                    TaskItemRow(
+                                    renderTaskRow(
                                         task = task,
-                                        linkedActivity = task.linkedActivityId?.let { activityMap[it] },
-                                        onToggleCompleted = { viewModel.toggleTask(task) },
-                                        onClick = { onViewTask(task) },
-                                        onEditClick = { onEditTask(task) },
-                                        onFocusTimerClick = {
-                                            focusTimerTitle = task.title
-                                            showFocusTimer = true
-                                        },
-                                        onPostponeTomorrowClick = { viewModel.postponeToTomorrow(task) },
-                                        onDeleteClick = { viewModel.deleteTask(task.id) },
-                                        onToggleSubtask = { subId -> viewModel.toggleSubtask(task, subId) }
+                                        linkedActivity = task.linkedActivityId?.let { activityMap[it] }
                                     )
                                 }
                             }
@@ -659,19 +722,9 @@ fun TasksScreen(
                                         )
                                     }
                                     items(tasks, key = { "day_task_${it.id}" }) { task ->
-                                        TaskItemRow(
+                                        renderTaskRow(
                                             task = task,
-                                            linkedActivity = task.linkedActivityId?.let { activityMap[it] },
-                                            onToggleCompleted = { viewModel.toggleTask(task) },
-                                            onClick = { onViewTask(task) },
-                                            onEditClick = { onEditTask(task) },
-                                            onFocusTimerClick = {
-                                                focusTimerTitle = task.title
-                                                showFocusTimer = true
-                                            },
-                                            onPostponeTomorrowClick = { viewModel.postponeToTomorrow(task) },
-                                            onDeleteClick = { viewModel.deleteTask(task.id) },
-                                            onToggleSubtask = { subId -> viewModel.toggleSubtask(task, subId) }
+                                            linkedActivity = task.linkedActivityId?.let { activityMap[it] }
                                         )
                                     }
                                 }
@@ -692,19 +745,9 @@ fun TasksScreen(
                                         TaskSectionHeader(title = activity.name, color = actColor, count = tasks.size)
                                     }
                                     items(tasks, key = { "act_task_${it.id}" }) { task ->
-                                        TaskItemRow(
+                                        renderTaskRow(
                                             task = task,
-                                            linkedActivity = activity,
-                                            onToggleCompleted = { viewModel.toggleTask(task) },
-                                            onClick = { onViewTask(task) },
-                                            onEditClick = { onEditTask(task) },
-                                            onFocusTimerClick = {
-                                                focusTimerTitle = task.title
-                                                showFocusTimer = true
-                                            },
-                                            onPostponeTomorrowClick = { viewModel.postponeToTomorrow(task) },
-                                            onDeleteClick = { viewModel.deleteTask(task.id) },
-                                            onToggleSubtask = { subId -> viewModel.toggleSubtask(task, subId) }
+                                            linkedActivity = activity
                                         )
                                     }
                                 }
@@ -718,19 +761,9 @@ fun TasksScreen(
                                         )
                                     }
                                     items(uiState.unassignedTasks, key = { "unassigned_task_${it.id}" }) { task ->
-                                        TaskItemRow(
+                                        renderTaskRow(
                                             task = task,
-                                            linkedActivity = null,
-                                            onToggleCompleted = { viewModel.toggleTask(task) },
-                                            onClick = { onViewTask(task) },
-                                            onEditClick = { onEditTask(task) },
-                                            onFocusTimerClick = {
-                                                focusTimerTitle = task.title
-                                                showFocusTimer = true
-                                            },
-                                            onPostponeTomorrowClick = { viewModel.postponeToTomorrow(task) },
-                                            onDeleteClick = { viewModel.deleteTask(task.id) },
-                                            onToggleSubtask = { subId -> viewModel.toggleSubtask(task, subId) }
+                                            linkedActivity = null
                                         )
                                     }
                                 }
@@ -784,13 +817,10 @@ fun TasksScreen(
                                     }
                                 }
                                 items(uiState.completedTasks, key = { "completed_${it.id}" }) { task ->
-                                    TaskItemRow(
+                                    renderTaskRow(
                                         task = task,
                                         linkedActivity = task.linkedActivityId?.let { activityMap[it] },
-                                        onToggleCompleted = { viewModel.toggleTask(task) },
-                                        onClick = { onViewTask(task) },
-                                        onEditClick = { onEditTask(task) },
-                                        onDeleteClick = { viewModel.deleteTask(task.id) }
+                                        isCompletedTab = true
                                     )
                                 }
                             } else {

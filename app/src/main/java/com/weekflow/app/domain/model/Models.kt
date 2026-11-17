@@ -132,8 +132,28 @@ data class Slot(
     val periodOrder: Int = 1,
     val presetId: String = SchedulePreset.DEFAULT_ID,
     val sessionItems: List<SubtaskItem> = emptyList(),
-    val grade: String? = null
+    val gradesByDate: Map<String, String> = emptyMap()
 ) {
+    fun gradeForDate(dateIso: String?): String? =
+        dateIso?.trim()?.takeIf { it.isNotEmpty() }?.let { key ->
+            gradesByDate[key]?.trim()?.takeIf { g -> g.isNotEmpty() }
+        }
+
+    fun gradeForDate(date: LocalDate): String? = gradeForDate(date.toString())
+
+    fun withGradeForDate(dateIso: String, grade: String?): Slot {
+        val cleanDate = dateIso.trim()
+        if (cleanDate.isEmpty()) return this
+        val cleanedGrade = grade?.trim()?.takeIf { it.isNotEmpty() }
+        val updated = gradesByDate.toMutableMap()
+        if (cleanedGrade == null) {
+            updated.remove(cleanDate)
+        } else {
+            updated[cleanDate] = cleanedGrade
+        }
+        return copy(gradesByDate = updated)
+    }
+
     fun parseStartTime(): LocalTime = try {
         LocalTime.parse(startTime, DateTimeFormatter.ofPattern("HH:mm"))
     } catch (_: Exception) {

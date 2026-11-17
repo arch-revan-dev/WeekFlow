@@ -101,7 +101,7 @@ import java.time.LocalDate
 fun ScheduleScreen(
     viewModel: ScheduleViewModel,
     onAddNewSlot: (dayOfWeek: Int) -> Unit,
-    onEditSlot: (slotId: String) -> Unit,
+    onEditSlot: (slotId: String, dateIso: String) -> Unit,
     onAddNewTaskForSlot: (activityId: String, slotId: String, referenceDate: LocalDate) -> Unit,
     onAddNewEvent: (dateIso: String) -> Unit,
     onEditEvent: (CalendarEvent) -> Unit,
@@ -717,7 +717,8 @@ fun ScheduleScreen(
                                             showProgressBar = uiState.preferences.showProgressBar,
                                             isTwoWeekCycleEnabled = uiState.preferences.isTwoWeekCycleEnabled,
                                             isToday = uiState.selectedDate == LocalDate.now(),
-                                            onCardClick = { onEditSlot(item.details.slot.id) },
+                                            slotGrade = item.details.slot.gradeForDate(uiState.selectedDate),
+                                            onCardClick = { onEditSlot(item.details.slot.id, uiState.selectedDate.toString()) },
                                             onAddTaskClick = {
                                                 onAddNewTaskForSlot(
                                                     item.details.activity.id,

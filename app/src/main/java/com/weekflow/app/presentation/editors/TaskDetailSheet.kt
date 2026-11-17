@@ -6,11 +6,17 @@ import android.content.Context
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,10 +24,12 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -31,6 +39,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AttachFile
 import androidx.compose.material.icons.rounded.Check
@@ -44,10 +53,12 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.HourglassEmpty
+import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.InsertDriveFile
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material.icons.rounded.Replay
 import androidx.compose.material.icons.rounded.Update
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -56,26 +67,38 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.weekflow.app.core.designsystem.IosBlue
 import com.weekflow.app.core.designsystem.IosOrange
 import com.weekflow.app.core.designsystem.IosRed
@@ -712,6 +735,8 @@ internal fun TaskAttachmentsSection(
 ) {
     val iosColors = LocalIosColors.current
     val haptic = LocalHapticFeedback.current
+    val context = LocalContext.current
+    var previewImageAttachment by remember { mutableStateOf<TaskAttachment?>(null) }
 
     Column(
         modifier = modifier
@@ -772,22 +797,33 @@ internal fun TaskAttachmentsSection(
         }
 
         attachments.forEach { att ->
+            val isImage = TaskAttachmentHelper.isImageAttachment(att)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(10.dp))
                     .background(iosColors.card)
-                    .clickable { onOpenAttachment(att) }
+                    .clickable {
+                        if (isImage) {
+                            previewImageAttachment = att
+                        } else {
+                            onOpenAttachment(att)
+                        }
+                    }
                     .padding(horizontal = 10.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.InsertDriveFile,
-                    contentDescription = null,
-                    tint = IosBlue,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
+                if (isImage) {
+                    AttachmentImageThumbnail(attachment = att)
+                } else {
+                    Icon(
+                        imageVector = Icons.Rounded.InsertDriveFile,
+                        contentDescription = null,
+                        tint = IosBlue,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = att.displayName,
@@ -823,4 +859,270 @@ internal fun TaskAttachmentsSection(
             }
         }
     }
+
+    previewImageAttachment?.let { imgAtt ->
+        InAppImageViewerDialog(
+            attachment = imgAtt,
+            onDismiss = { previewImageAttachment = null },
+            onOpenExternal = { TaskAttachmentHelper.openAttachment(context, imgAtt) }
+        )
+    }
+}
+
+@Composable
+private fun AttachmentImageThumbnail(
+    attachment: TaskAttachment,
+    modifier: Modifier = Modifier
+) {
+    val iosColors = LocalIosColors.current
+    val thumbnail by produceState<ImageBitmap?>(
+        initialValue = TaskAttachmentHelper.getCachedBitmap(attachment.localPath, 160),
+        key1 = attachment.localPath
+    ) {
+        if (value == null) {
+            value = TaskAttachmentHelper.decodeSampledBitmap(attachment.localPath, 160)
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .size(38.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(iosColors.cardSecondary),
+        contentAlignment = Alignment.Center
+    ) {
+        val bitmap = thumbnail
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap,
+                contentDescription = attachment.displayName,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Rounded.Image,
+                contentDescription = null,
+                tint = IosBlue,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
+@Composable
+internal fun InAppImageViewerDialog(
+    attachment: TaskAttachment,
+    onDismiss: () -> Unit,
+    onOpenExternal: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
+        var bitmap by remember(attachment.localPath) { mutableStateOf<ImageBitmap?>(null) }
+        var isLoading by remember(attachment.localPath) { mutableStateOf(true) }
+        var showChrome by remember(attachment.localPath) { mutableStateOf(true) }
+        var scale by remember(attachment.localPath) { mutableFloatStateOf(1f) }
+        var offset by remember(attachment.localPath) { mutableStateOf(Offset.Zero) }
+        var containerSize by remember { mutableStateOf(IntSize.Zero) }
+
+        LaunchedEffect(attachment.localPath) {
+            isLoading = true
+            bitmap = TaskAttachmentHelper.decodeSampledBitmap(attachment.localPath, 2048)
+            isLoading = false
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .onSizeChanged { containerSize = it }
+                .pointerInput(attachment.localPath) {
+                    detectTapGestures(
+                        onTap = { showChrome = !showChrome },
+                        onDoubleTap = { tapOffset ->
+                            val loaded = bitmap ?: return@detectTapGestures
+                            if (scale > 1.05f) {
+                                scale = 1f
+                                offset = Offset.Zero
+                            } else {
+                                val targetScale = 2.5f
+                                val center = Offset(containerSize.width / 2f, containerSize.height / 2f)
+                                val rawOffset = (center - tapOffset) * (targetScale - 1f)
+                                scale = targetScale
+                                offset = clampViewerOffset(rawOffset, targetScale, containerSize, loaded)
+                            }
+                        }
+                    )
+                }
+                .pointerInput(attachment.localPath) {
+                    detectTransformGestures { centroid, pan, zoom, _ ->
+                        val loaded = bitmap ?: return@detectTransformGestures
+                        val newScale = (scale * zoom).coerceIn(1f, 5f)
+                        val newOffset = if (newScale <= 1.01f) {
+                            Offset.Zero
+                        } else {
+                            val center = Offset(containerSize.width / 2f, containerSize.height / 2f)
+                            val scaleFactor = if (scale > 0f) newScale / scale else 1f
+                            val nextOffset = offset * scaleFactor + (center - centroid) * (scaleFactor - 1f) + pan
+                            clampViewerOffset(nextOffset, newScale, containerSize, loaded)
+                        }
+                        scale = newScale
+                        offset = newOffset
+                    }
+                }
+        ) {
+            val loadedBitmap = bitmap
+            when {
+                isLoading -> {
+                    CircularProgressIndicator(
+                        color = Color.White,
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                }
+                loadedBitmap != null -> {
+                    Image(
+                        bitmap = loadedBitmap,
+                        contentDescription = attachment.displayName,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                scaleX = scale
+                                scaleY = scale
+                                translationX = offset.x
+                                translationY = offset.y
+                            }
+                    )
+                }
+                else -> {
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Image,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.7f),
+                            modifier = Modifier.size(44.dp)
+                        )
+                        Text(
+                            text = "Не удалось загрузить изображение",
+                            color = Color.White.copy(alpha = 0.85f),
+                            fontSize = 14.sp
+                        )
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color.White.copy(alpha = 0.16f))
+                                .clickable { onOpenExternal() }
+                                .padding(horizontal = 14.dp, vertical = 8.dp)
+                        ) {
+                            Text(
+                                text = "Открыть в другом приложении",
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+            }
+
+            AnimatedVisibility(
+                visible = showChrome,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.TopCenter)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.Black.copy(alpha = 0.6f))
+                        .statusBarsPadding()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = attachment.displayName,
+                            fontSize = 14.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = TaskAttachmentHelper.formatFileSize(attachment.sizeBytes),
+                            fontSize = 12.sp,
+                            color = Color.White.copy(alpha = 0.72f),
+                            maxLines = 1
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.14f))
+                            .clickable { onOpenExternal() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.OpenInNew,
+                            contentDescription = "Открыть в другом приложении",
+                            tint = Color.White,
+                            modifier = Modifier.size(19.dp)
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.22f))
+                            .clickable { onDismiss() },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = "Закрыть",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun clampViewerOffset(
+    rawOffset: Offset,
+    scale: Float,
+    containerSize: IntSize,
+    bitmap: ImageBitmap
+): Offset {
+    if (containerSize.width <= 0 || containerSize.height <= 0 || bitmap.width <= 0 || bitmap.height <= 0) {
+        return Offset.Zero
+    }
+    val containerW = containerSize.width.toFloat()
+    val containerH = containerSize.height.toFloat()
+    val fitScale = minOf(containerW / bitmap.width.toFloat(), containerH / bitmap.height.toFloat())
+    val fittedW = bitmap.width * fitScale
+    val fittedH = bitmap.height * fitScale
+    val maxX = ((fittedW * scale - containerW) / 2f).coerceAtLeast(0f)
+    val maxY = ((fittedH * scale - containerH) / 2f).coerceAtLeast(0f)
+    return Offset(
+        x = rawOffset.x.coerceIn(-maxX, maxX),
+        y = rawOffset.y.coerceIn(-maxY, maxY)
+    )
 }

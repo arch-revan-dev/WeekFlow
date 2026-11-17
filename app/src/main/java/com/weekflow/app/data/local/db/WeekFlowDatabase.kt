@@ -16,6 +16,11 @@ import com.weekflow.app.data.local.db.entity.PresetEntity
 import com.weekflow.app.data.local.db.entity.SlotEntity
 import com.weekflow.app.data.local.db.entity.TaskEntity
 import com.weekflow.app.data.local.db.entity.VacationEntity
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import java.time.DayOfWeek
+import java.time.LocalDate
+import java.time.temporal.TemporalAdjusters
 
 @Database(
     entities = [
@@ -26,7 +31,7 @@ import com.weekflow.app.data.local.db.entity.VacationEntity
         TaskEntity::class,
         VacationEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class WeekFlowDatabase : RoomDatabase() {
@@ -39,6 +44,36 @@ abstract class WeekFlowDatabase : RoomDatabase() {
 
     companion object {
         const val DATABASE_NAME = "weekflow_database.db"
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `slots` ADD COLUMN `gradesJson` TEXT NOT NULL DEFAULT '{}'")
+                val weekMonday = LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+                val updates = mutableListOf<Pair<String, String>>()
+                db.query("SELECT id, dayOfWeek, grade FROM slots WHERE grade IS NOT NULL AND grade != ''").use { cursor ->
+                    val idIdx = cursor.getColumnIndexOrThrow("id")
+                    val dayIdx = cursor.getColumnIndexOrThrow("dayOfWeek")
+                    val gradeIdx = cursor.getColumnIndexOrThrow("grade")
+                    while (cursor.moveToNext()) {
+                        val slotId = cursor.getString(idIdx)
+                        val dayOfWeek = cursor.getInt(dayIdx).coerceIn(1, 7)
+                        val legacyGrade = cursor.getString(gradeIdx)?.trim()
+                        if (!legacyGrade.isNullOrEmpty()) {
+                            val targetDateIso = weekMonday.plusDays((dayOfWeek - 1).toLong()).toString()
+                            val jsonStr = Json.encodeToString(mapOf(targetDateIso to legacyGrade))
+                            updates.add(slotId to jsonStr)
+                        }
+                    }
+                }
+                for ((slotId, gradesJson) in updates) {
+                    db.execSQL(
+                        "UPDATE `slots` SET `gradesJson` = ?, `grade` = NULL WHERE `id` = ?",
+                        arrayOf(gradesJson, slotId)
+                    )
+                }
+                db.execSQL("UPDATE `slots` SET `grade` = NULL WHERE `grade` IS NOT NULL")
+            }
+        }
 
         val MIGRATION_6_7 = object : Migration(6, 7) {
             override fun migrate(db: SupportSQLiteDatabase) {

@@ -36,6 +36,7 @@ data class SlotDto(
     val customNote: String? = null,
     val periodOrder: Int = 1,
     val sessionItems: List<SubtaskItem> = emptyList(),
+    val gradesByDate: Map<String, String> = emptyMap(),
     val grade: String? = null
 )
 

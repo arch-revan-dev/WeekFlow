@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.weekflow.app.core.notifications.NotificationScheduler
 import com.weekflow.app.domain.model.Activity
+import com.weekflow.app.domain.model.AppProfile
 import com.weekflow.app.domain.model.RegularReminder
 import com.weekflow.app.domain.model.SchedulePreset
 import com.weekflow.app.domain.model.Slot
@@ -12,17 +13,23 @@ import com.weekflow.app.domain.model.Task
 import com.weekflow.app.domain.model.TaskAttachment
 import com.weekflow.app.domain.model.TaskPriority
 import com.weekflow.app.domain.model.UserPreferences
+import com.weekflow.app.domain.model.Vacation
 import com.weekflow.app.domain.repository.PreferencesRepository
 import com.weekflow.app.domain.repository.ScheduleRepository
 import com.weekflow.app.domain.repository.UndoSnapshotInfo
+import com.weekflow.app.domain.usecase.CalculateNextLessonDateUseCase
 import com.weekflow.app.core.util.DateTimeUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
+import java.time.LocalTime
 import java.util.UUID
 
 data class TasksUiState(
@@ -44,12 +51,14 @@ data class TasksUiState(
     val rawAllActivities: List<Activity> = emptyList(),
     val rawAllSlots: List<Slot> = emptyList(),
     val rawAllTasks: List<Task> = emptyList(),
+    val vacations: List<Vacation> = emptyList(),
     val preferences: UserPreferences = UserPreferences()
 )
 
 class TasksViewModel(
     private val scheduleRepository: ScheduleRepository,
     private val preferencesRepository: PreferencesRepository,
+    private val calculateNextLessonDateUseCase: CalculateNextLessonDateUseCase,
     private val notificationScheduler: NotificationScheduler? = null
 ) : ViewModel() {
 
@@ -63,6 +72,7 @@ class TasksViewModel(
         scheduleRepository.getAllTasks(),
         scheduleRepository.getAllActivities(),
         scheduleRepository.getAllSlots(),
+        scheduleRepository.getAllVacations(),
         preferencesRepository.userPreferences
     ) { params ->
         val tab = params[0] as Int
@@ -75,7 +85,9 @@ class TasksViewModel(
         val rawActivities = params[4] as List<Activity>
         @Suppress("UNCHECKED_CAST")
         val rawSlots = params[5] as List<Slot>
-        val preferences = params[6] as UserPreferences
+        @Suppress("UNCHECKED_CAST")
+        val vacations = params[6] as List<Vacation>
+        val preferences = params[7] as UserPreferences
 
         val activePreset = presets.firstOrNull { it.id == preferences.activePresetId }
             ?: presets.firstOrNull()
@@ -176,6 +188,7 @@ class TasksViewModel(
             rawAllActivities = rawActivities,
             rawAllSlots = rawSlots,
             rawAllTasks = rawTasks,
+            vacations = vacations,
             preferences = preferences
         )
     }.stateIn(
@@ -279,11 +292,72 @@ class TasksViewModel(
         }
     }
 
-    fun postponeToTomorrow(task: Task) {
-        val tomorrowIso = LocalDate.now().plusDays(1).toString()
+    fun postponeToNextLesson(
+        task: Task,
+        onMoved: ((LocalDate, String?) -> Unit)? = null
+    ) {
         viewModelScope.launch {
-            scheduleRepository.upsertTask(task.copy(dueDateIso = tomorrowIso))
+            val state = uiState.value
+            val today = LocalDate.now()
+            val baseDate = maxOf(task.parseDueDate() ?: today, today)
+            val vacations = state.vacations.ifEmpty {
+                runCatching { scheduleRepository.getAllVacations().first() }.getOrDefault(emptyList())
+            }
+            val taskPreset = state.allPresets.firstOrNull { it.id == task.presetId } ?: state.activePreset
+            val isStudyProfile = taskPreset.appProfile == AppProfile.STUDY ||
+                taskPreset.appProfile == AppProfile.UNIVERSITY ||
+                taskPreset.appProfile == AppProfile.UNIVERSAL
+
+            val targetDate: LocalDate
+            val updatedLinkedSlotId: String?
+            val subjectName: String?
+
+            if (task.linkedActivityId != null) {
+                val presetSlots = state.rawAllSlots.filter { it.presetId == task.presetId }
+                val match = calculateNextLessonDateUseCase(
+                    activityId = task.linkedActivityId,
+                    referenceDate = baseDate,
+                    referenceTime = LocalTime.MAX,
+                    preferences = state.preferences,
+                    allSlots = presetSlots,
+                    vacations = vacations
+                )
+                targetDate = if (match.slot != null || isStudyProfile) {
+                    match.dueDate
+                } else {
+                    baseDate.plusDays(1)
+                }
+                updatedLinkedSlotId = match.slot?.id ?: match.linkedSlotId
+                subjectName = state.rawAllActivities.firstOrNull { it.id == task.linkedActivityId }?.name
+            } else {
+                targetDate = if (isStudyProfile) {
+                    calculateNextLessonDateUseCase.findNextValidStudyDay(
+                        startDate = baseDate.plusDays(1),
+                        preferences = state.preferences,
+                        vacations = vacations
+                    )
+                } else {
+                    baseDate.plusDays(1)
+                }
+                updatedLinkedSlotId = task.linkedSlotId
+                subjectName = null
+            }
+
+            scheduleRepository.upsertTask(
+                task.copy(
+                    dueDateIso = targetDate.toString(),
+                    linkedSlotId = updatedLinkedSlotId
+                )
+            )
+
+            withContext(Dispatchers.Main.immediate) {
+                onMoved?.invoke(targetDate, subjectName)
+            }
         }
+    }
+
+    fun postponeToTomorrow(task: Task) {
+        postponeToNextLesson(task)
     }
 
     fun quickAddTask(title: String, priority: TaskPriority = TaskPriority.NONE) {

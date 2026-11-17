@@ -20,6 +20,7 @@ class NotificationHelper(private val context: Context) {
         const val CHANNEL_LESSONS = "channel_weekflow_lessons"
         const val CHANNEL_SUMMARIES = "channel_weekflow_summaries"
         const val CHANNEL_TASKS = "channel_weekflow_tasks"
+        const val CHANNEL_REGULAR_REMINDERS = "channel_weekflow_regular_reminders"
 
         const val NOTIFICATION_ID_TEST = 10001
         const val NOTIFICATION_ID_EVENING = 10002
@@ -60,7 +61,18 @@ class NotificationHelper(private val context: Context) {
                 enableVibration(true)
             }
 
-            notificationManager.createNotificationChannels(listOf(lessonChannel, summaryChannel, tasksChannel))
+            val regularRemindersChannel = NotificationChannel(
+                CHANNEL_REGULAR_REMINDERS,
+                "Регулярные напоминания",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Периодические и запланированные пользовательские напоминания"
+                enableVibration(true)
+            }
+
+            notificationManager.createNotificationChannels(
+                listOf(lessonChannel, summaryChannel, tasksChannel, regularRemindersChannel)
+            )
         }
     }
 
@@ -155,6 +167,30 @@ class NotificationHelper(private val context: Context) {
 
         try {
             NotificationManagerCompat.from(context).notify(NOTIFICATION_ID_MORNING, notification)
+        } catch (_: SecurityException) {}
+    }
+
+    fun showRegularReminderNotification(
+        id: Int,
+        title: String,
+        message: String
+    ) {
+        if (!hasNotificationPermission()) return
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_REGULAR_REMINDERS)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(title)
+            .setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
+            .setAutoCancel(true)
+            .setContentIntent(getLaunchPendingIntent())
+            .build()
+
+        try {
+            NotificationManagerCompat.from(context).notify(id, notification)
         } catch (_: SecurityException) {}
     }
 

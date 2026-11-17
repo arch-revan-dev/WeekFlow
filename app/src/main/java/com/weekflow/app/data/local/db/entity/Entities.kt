@@ -153,6 +153,8 @@ data class SlotEntity(
     val presetId: String = SchedulePreset.DEFAULT_ID,
     @ColumnInfo(defaultValue = "'[]'")
     val sessionItemsJson: String = "[]",
+    @ColumnInfo(defaultValue = "'{}'")
+    val gradesJson: String = "{}",
     val grade: String? = null
 ) {
     fun toDomain(): Slot {
@@ -161,6 +163,18 @@ data class SlotEntity(
             else subtaskJsonParser.decodeFromString<List<SubtaskItem>>(sessionItemsJson)
         } catch (_: Exception) {
             emptyList()
+        }
+        val parsedGrades = try {
+            if (gradesJson.isBlank() || gradesJson == "{}") emptyMap()
+            else subtaskJsonParser.decodeFromString<Map<String, String>>(gradesJson)
+                .mapNotNull { (k, v) ->
+                    val cleanKey = k.trim()
+                    val cleanVal = v.trim()
+                    if (cleanKey.isNotEmpty() && cleanVal.isNotEmpty()) cleanKey to cleanVal else null
+                }
+                .toMap()
+        } catch (_: Exception) {
+            emptyMap()
         }
         return Slot(
             id = id,
@@ -176,27 +190,43 @@ data class SlotEntity(
             periodOrder = periodOrder,
             presetId = presetId.ifBlank { SchedulePreset.DEFAULT_ID },
             sessionItems = parsedItems,
-            grade = grade
+            gradesByDate = parsedGrades
         )
     }
 
     companion object {
-        fun fromDomain(domain: Slot): SlotEntity = SlotEntity(
-            id = domain.id,
-            activityTypeId = domain.activityTypeId,
-            dayOfWeek = domain.dayOfWeek,
-            weekCycle = domain.weekCycle.name,
-            startTime = domain.startTime,
-            endTime = domain.endTime,
-            customLocation = domain.customLocation,
-            customInstructor = domain.customInstructor,
-            customType = domain.customType,
-            customNote = domain.customNote,
-            periodOrder = domain.periodOrder,
-            presetId = domain.presetId.ifBlank { SchedulePreset.DEFAULT_ID },
-            sessionItemsJson = try { subtaskJsonParser.encodeToString(domain.sessionItems) } catch (_: Exception) { "[]" },
-            grade = domain.grade
-        )
+        fun fromDomain(domain: Slot): SlotEntity {
+            val cleanedGrades = domain.gradesByDate.entries
+                .mapNotNull { (k, v) ->
+                    val cleanKey = k.trim()
+                    val cleanVal = v.trim()
+                    if (cleanKey.isNotEmpty() && cleanVal.isNotEmpty()) cleanKey to cleanVal else null
+                }
+                .toMap()
+            val serializedGrades = try {
+                if (cleanedGrades.isEmpty()) "{}"
+                else subtaskJsonParser.encodeToString(cleanedGrades)
+            } catch (_: Exception) {
+                "{}"
+            }
+            return SlotEntity(
+                id = domain.id,
+                activityTypeId = domain.activityTypeId,
+                dayOfWeek = domain.dayOfWeek,
+                weekCycle = domain.weekCycle.name,
+                startTime = domain.startTime,
+                endTime = domain.endTime,
+                customLocation = domain.customLocation,
+                customInstructor = domain.customInstructor,
+                customType = domain.customType,
+                customNote = domain.customNote,
+                periodOrder = domain.periodOrder,
+                presetId = domain.presetId.ifBlank { SchedulePreset.DEFAULT_ID },
+                sessionItemsJson = try { subtaskJsonParser.encodeToString(domain.sessionItems) } catch (_: Exception) { "[]" },
+                gradesJson = serializedGrades,
+                grade = null
+            )
+        }
     }
 }
 

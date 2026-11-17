@@ -104,7 +104,7 @@ fun WeekTableGridView(
     activities: List<Activity>,
     activeWeekCycle: WeekCycle,
     isTwoWeekCycleEnabled: Boolean,
-    onEditSlot: (slotId: String) -> Unit,
+    onEditSlot: (slotId: String, dateIso: String) -> Unit,
     onAddSlot: (dayOfWeek: Int, periodOrder: Int) -> Unit,
     onMoveSlot: ((slot: Slot, targetDayOfWeek: Int, targetPeriodOrder: Int) -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -420,7 +420,7 @@ fun WeekTableGridView(
                                             }
                                             .clickable {
                                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                onEditSlot(slot.id)
+                                                onEditSlot(slot.id, dateIso)
                                             }
                                             .padding(cellPaddingDp)
                                     ) {
@@ -445,7 +445,7 @@ fun WeekTableGridView(
                                                     modifier = Modifier.weight(1f)
                                                 )
                                                 val gradeText = if (appProfile.supportsGrades && scaleFactor >= 0.70f) {
-                                                    slot.grade?.trim()?.takeIf { it.isNotBlank() }
+                                                    slot.gradeForDate(date)
                                                 } else {
                                                     null
                                                 }
