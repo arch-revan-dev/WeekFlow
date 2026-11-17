@@ -1,0 +1,21 @@
+WeekFlow
+Copyright 2026 reVan (arch-revan-dev)
+
+This product includes software developed for the WeekFlow project
+(https://github.com/arch-revan-dev/WeekFlow).
+
+------------------------------------------------------------------------
+TRADEMARK & BRAND NOTICE
+------------------------------------------------------------------------
+While the source code of WeekFlow is licensed under the Apache License,
+Version 2.0 (see LICENSE), Section 6 of that license applies strictly:
+
+The "WeekFlow" name, wordmark, app logo, launcher icons, and official
+release branding remain the exclusive property of the original author
+(arch-revan-dev).
+
+If you distribute modified builds, forks, or store listings (such as on
+Google Play, Apple App Store, F-Droid, or third-party app catalogs),
+you MUST use your own distinct application name, package identifier
+(`applicationId`), and app icon so users are never misled into believing
+a third-party build is an official WeekFlow release.

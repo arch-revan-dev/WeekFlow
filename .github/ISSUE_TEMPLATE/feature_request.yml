@@ -1,0 +1,19 @@
+name: Feature Request / Предложить идею
+description: Предложить новую функцию или улучшение интерфейса / Suggest an enhancement
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or Goal / Какую задачу это решает?
+      description: Опишите сценарий использования, которого сейчас не хватает.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution / Предлагаемое решение
+      description: Как это должно работать в интерфейсе или расписании?
+    validations:
+      required: false

@@ -1,0 +1,41 @@
+name: Bug Report / Сообщить об ошибке
+description: Сообщить о сбое, баге интерфейса или проблеме с уведомлениями / Report a bug
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Спасибо за репорт! Чем точнее описаны шаги, тем быстрее получится исправить проблему.
+  - type: input
+    id: version
+    attributes:
+      label: App Version / Версия приложения
+      description: Например, v4.6.0 (из раздела Releases или Настройки)
+      placeholder: "v4.6.0"
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device & Android Version / Устройство и версия Android
+      placeholder: "Pixel 8, Android 15 / Xiaomi, HyperOS (Android 14)"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened? / Что произошло?
+      description: Опишите ожидаемое и фактическое поведение.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce / Шаги воспроизведения
+      placeholder: |
+        1. Открыть вкладку «...»
+        2. Нажать на «...»
+        3. Увидеть ...
+    validations:
+      required: true
