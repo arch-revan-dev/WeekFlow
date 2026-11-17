@@ -317,7 +317,7 @@ class NotificationScheduler(
 
             // 2. Calendar Events reminders
             val dayEvents = allEvents.filter {
-                it.presetId == dayPreset.id && it.dateIso == targetDate.toString() && !it.isAllDay && it.startTime != null
+                it.presetId == dayPreset.id && it.occursOnDate(targetDate) && !it.isAllDay && it.startTime != null
             }
             for (event in dayEvents) {
                 val eventStart = event.parseStartTime() ?: continue

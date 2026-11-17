@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.LocationOn
+import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -60,6 +61,8 @@ import com.weekflow.app.core.designsystem.IosRed
 import com.weekflow.app.core.designsystem.LocalIosColors
 import com.weekflow.app.core.util.ColorParser
 import com.weekflow.app.domain.model.CalendarEvent
+import com.weekflow.app.domain.model.CalendarEventOccurrence
+import com.weekflow.app.domain.model.EventRepeatType
 import com.weekflow.app.presentation.schedule.components.ZoomControlPill
 import com.weekflow.app.presentation.schedule.components.twoFingerPinchZoom
 import java.time.LocalDate
@@ -70,10 +73,10 @@ import kotlin.math.roundToInt
 @Composable
 fun EventsTimelineGridView(
     selectedDate: LocalDate,
-    events: List<CalendarEvent>,
+    occurrences: List<CalendarEventOccurrence>,
     onEditEvent: (CalendarEvent) -> Unit,
-    onAddEventWithTime: (dateIso: String, startTime: String?, endTime: String?, isAllDay: Boolean) -> Unit,
-    onMoveEvent: ((event: CalendarEvent, newDateIso: String, newStartTime: String?, newEndTime: String?, newIsAllDay: Boolean) -> Unit)? = null,
+    onAddEventWithTime: (String, String?, String?, Boolean) -> Unit,
+    onMoveEventOccurrence: (CalendarEventOccurrence, String, String?, String?, Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val iosColors = LocalIosColors.current
@@ -86,7 +89,7 @@ fun EventsTimelineGridView(
     val hourHeightDp = hourHeightDpVal.dp
     val timeColWidth = 54.dp
 
-    var draggingEventId by remember { mutableStateOf<String?>(null) }
+    var draggingOccurrenceKey by remember { mutableStateOf<String?>(null) }
     var dragAccumulatedPx by remember { mutableFloatStateOf(0f) }
     var dragSnappedSteps15 by remember { mutableIntStateOf(0) }
 
@@ -94,23 +97,27 @@ fun EventsTimelineGridView(
     val isToday = selectedDate == LocalDate.now()
     val dateIso = selectedDate.toString()
 
-    val allDayEvents = remember(events, dateIso) {
-        events.filter { it.dateIso == dateIso && it.isAllDay }
+    val allDayOccurrences = remember(occurrences, selectedDate) {
+        occurrences.filter {
+            it.occurrenceDate == selectedDate && (it.event.isAllDay || it.event.startTime.isNullOrBlank())
+        }
     }
 
-    val timedEvents = remember(events, dateIso) {
-        events.filter { it.dateIso == dateIso && !it.isAllDay }
+    val timedOccurrences = remember(occurrences, selectedDate) {
+        occurrences.filter {
+            it.occurrenceDate == selectedDate && !it.event.isAllDay && !it.event.startTime.isNullOrBlank()
+        }
     }
 
     val currentOnAddEventWithTime by rememberUpdatedState(onAddEventWithTime)
 
-    val positionedItems = remember(timedEvents) {
-        val rawItems = timedEvents.map { event ->
-            val eventStart = event.parseStartTime() ?: LocalTime.of(12, 0)
-            val eventEnd = event.parseEndTime() ?: eventStart.plusHours(1)
+    val positionedItems = remember(timedOccurrences) {
+        val rawItems = timedOccurrences.map { occ ->
+            val eventStart = occ.event.parseStartTime() ?: LocalTime.of(12, 0)
+            val eventEnd = occ.event.parseEndTime() ?: eventStart.plusHours(1)
             val startMin = eventStart.hour * 60 + eventStart.minute
             val endMin = eventEnd.hour * 60 + eventEnd.minute
-            event to (startMin to endMin)
+            occ to (startMin to endMin)
         }
         layoutOverlappingEvents(rawItems)
     }
@@ -135,7 +142,7 @@ fun EventsTimelineGridView(
             .background(iosColors.background)
     ) {
         // Optional horizontal "Весь день" strip when selected day has all-day events
-        if (allDayEvents.isNotEmpty()) {
+        if (allDayOccurrences.isNotEmpty()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -158,7 +165,8 @@ fun EventsTimelineGridView(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    allDayEvents.forEach { event ->
+                    allDayOccurrences.forEach { occ ->
+                        val event = occ.event
                         val eventColor = ColorParser.parseHexColor(event.colorHex)
                         val chipSurface = eventColor
                             .copy(alpha = if (iosColors.isDark) 0.22f else 0.13f)
@@ -195,6 +203,14 @@ fun EventsTimelineGridView(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
+                            if (event.repeatType != EventRepeatType.NONE) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Repeat,
+                                    contentDescription = null,
+                                    tint = eventColor,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -340,8 +356,10 @@ fun EventsTimelineGridView(
 
                 // 2. Render Positioned Events
                 positionedItems.forEach { pos ->
-                    val event = pos.item
-                    key(event.id) {
+                    val occ = pos.item
+                    val event = occ.event
+                    val occKey = "${event.id}_${occ.occurrenceDateIso}"
+                    key(occKey) {
                         val eventColor = ColorParser.parseHexColor(event.colorHex)
                         val colWidth = availableWidth / pos.totalColumns
                         val xOffset = timeColWidth + 4.dp + (colWidth * pos.column)
@@ -353,7 +371,7 @@ fun EventsTimelineGridView(
                         val itemHeightDp = (visualDurationMin.toFloat() / 60f) * hourHeightDpVal
                         val itemWidth = (colWidth - 4.dp).coerceAtLeast(44.dp)
 
-                        val isDraggingThis = draggingEventId == event.id
+                        val isDraggingThis = draggingOccurrenceKey == occKey
                         val (effectiveStartMin, effectiveEndMin) = if (isDraggingThis) {
                             computeClampedDraggedEventTimes(
                                 initialStartMin = pos.startMinutes,
@@ -368,10 +386,10 @@ fun EventsTimelineGridView(
                         val displayStartStr = formatMinutesOfDay(effectiveStartMin)
                         val displayEndStr = formatMinutesOfDay(effectiveEndMin)
 
-                        val currentEvent by rememberUpdatedState(event)
+                        val currentOcc by rememberUpdatedState(occ)
                         val currentStartMinutes by rememberUpdatedState(pos.startMinutes)
                         val currentActualDurationMin by rememberUpdatedState(actualDurationMin)
-                        val currentOnMoveEvent by rememberUpdatedState(onMoveEvent)
+                        val currentOnMoveOccurrence by rememberUpdatedState(onMoveEventOccurrence)
                         val currentDateIso by rememberUpdatedState(dateIso)
 
                         val vertPadDp = (4f * scaleFactor).coerceIn(2f, 7f).dp
@@ -396,22 +414,22 @@ fun EventsTimelineGridView(
                                     color = if (isDraggingThis) IosBlue else eventColor.copy(alpha = 0.75f),
                                     shape = RoundedCornerShape(cornerDp)
                                 )
-                                .pointerInput(event, hourHeightDpVal, dateIso) {
+                                .pointerInput(occ.event, occ.occurrenceDateIso, hourHeightDpVal, dateIso) {
                                     val step15Px = (hourHeightDp.toPx() / 4f).coerceAtLeast(4f)
                                     detectDragGesturesAfterLongPress(
                                         onDragStart = {
                                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            draggingEventId = currentEvent.id
+                                            draggingOccurrenceKey = "${currentOcc.event.id}_${currentOcc.occurrenceDateIso}"
                                             dragAccumulatedPx = 0f
                                             dragSnappedSteps15 = 0
                                         },
                                         onDragEnd = {
                                             val steps = dragSnappedSteps15
-                                            draggingEventId = null
+                                            draggingOccurrenceKey = null
                                             dragAccumulatedPx = 0f
                                             dragSnappedSteps15 = 0
-                                            val moveHandler = currentOnMoveEvent
-                                            if (steps != 0 && moveHandler != null) {
+                                            val moveHandler = currentOnMoveOccurrence
+                                            if (steps != 0) {
                                                 val (newStartMin, newEndMin) = computeClampedDraggedEventTimes(
                                                     initialStartMin = currentStartMinutes,
                                                     initialActualDurationMin = currentActualDurationMin,
@@ -419,7 +437,7 @@ fun EventsTimelineGridView(
                                                 )
                                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                                 moveHandler(
-                                                    currentEvent,
+                                                    currentOcc,
                                                     currentDateIso,
                                                     formatMinutesOfDay(newStartMin),
                                                     formatMinutesOfDay(newEndMin),
@@ -428,7 +446,7 @@ fun EventsTimelineGridView(
                                             }
                                         },
                                         onDragCancel = {
-                                            draggingEventId = null
+                                            draggingOccurrenceKey = null
                                             dragAccumulatedPx = 0f
                                             dragSnappedSteps15 = 0
                                         },
@@ -482,16 +500,29 @@ fun EventsTimelineGridView(
                                         overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier.weight(1f)
                                     )
-                                    Text(
-                                        text = "$displayStartStr–$displayEndStr",
-                                        fontSize = timeFontSp.sp,
-                                        lineHeight = (timeFontSp * 1.05f).sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = if (isDraggingThis) IosBlue else eventColor,
-                                        maxLines = 1,
-                                        softWrap = false,
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(3.dp),
                                         modifier = Modifier.padding(start = 4.dp)
-                                    )
+                                    ) {
+                                        if (event.repeatType != EventRepeatType.NONE) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Repeat,
+                                                contentDescription = null,
+                                                tint = if (isDraggingThis) IosBlue else eventColor,
+                                                modifier = Modifier.size((11f * scaleFactor).coerceIn(8.5f, 13.5f).dp)
+                                            )
+                                        }
+                                        Text(
+                                            text = "$displayStartStr–$displayEndStr",
+                                            fontSize = timeFontSp.sp,
+                                            lineHeight = (timeFontSp * 1.05f).sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (isDraggingThis) IosBlue else eventColor,
+                                            maxLines = 1,
+                                            softWrap = false
+                                        )
+                                    }
                                 }
                                 if (event.location.isNotBlank() && itemHeightDp >= 44f) {
                                     val locFontSp = (9.5f * scaleFactor).coerceIn(7.5f, 12.5f)

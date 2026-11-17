@@ -172,19 +172,7 @@ class ScheduleRepositoryImpl(
             slotDao.upsertAll(slotEntities)
 
             val eventEntities = payload.events.map { evt ->
-                EventEntity(
-                    id = evt.id,
-                    title = evt.title,
-                    dateIso = evt.dateIso,
-                    startTime = evt.startTime,
-                    endTime = evt.endTime,
-                    isAllDay = evt.isAllDay,
-                    colorHex = evt.colorHex,
-                    location = evt.location,
-                    description = evt.description,
-                    category = evt.category.name,
-                    presetId = targetPreset
-                )
+                eventDtoToEntity(evt, resolvedId = evt.id, targetPreset = targetPreset)
             }
             eventDao.upsertAll(eventEntities)
 
@@ -424,6 +412,29 @@ class ScheduleRepositoryImpl(
         return if (rawId.startsWith(prefix)) rawId else "$prefix$rawId"
     }
 
+    private fun eventDtoToEntity(
+        evt: EventDto,
+        resolvedId: String,
+        targetPreset: String
+    ): EventEntity = EventEntity.fromDomain(
+        CalendarEvent(
+            id = resolvedId,
+            title = evt.title,
+            dateIso = evt.dateIso,
+            startTime = evt.startTime,
+            endTime = evt.endTime,
+            isAllDay = evt.isAllDay,
+            colorHex = evt.colorHex,
+            location = evt.location,
+            description = evt.description,
+            category = evt.category,
+            presetId = targetPreset,
+            repeatType = evt.repeatType,
+            repeatDays = evt.repeatDays,
+            repeatEndDateIso = evt.repeatEndDateIso
+        )
+    )
+
     private fun resolveSlotGrades(slot: SlotDto): Map<String, String> {
         val cleaned = slot.gradesByDate.entries
             .mapNotNull { (k, v) ->
@@ -495,19 +506,7 @@ class ScheduleRepositoryImpl(
             slotDao.upsertAll(slotEntities)
 
             val eventEntities = payload.events.map { evt ->
-                EventEntity(
-                    id = scopeId(evt.id, targetPreset),
-                    title = evt.title,
-                    dateIso = evt.dateIso,
-                    startTime = evt.startTime,
-                    endTime = evt.endTime,
-                    isAllDay = evt.isAllDay,
-                    colorHex = evt.colorHex,
-                    location = evt.location,
-                    description = evt.description,
-                    category = evt.category.name,
-                    presetId = targetPreset
-                )
+                eventDtoToEntity(evt, resolvedId = scopeId(evt.id, targetPreset), targetPreset = targetPreset)
             }
             eventDao.upsertAll(eventEntities)
 
@@ -574,19 +573,7 @@ class ScheduleRepositoryImpl(
             slotDao.upsertAll(slotEntities)
 
             val eventEntities = payload.events.map { evt ->
-                EventEntity(
-                    id = scopeId(evt.id, targetPreset),
-                    title = evt.title,
-                    dateIso = evt.dateIso,
-                    startTime = evt.startTime,
-                    endTime = evt.endTime,
-                    isAllDay = evt.isAllDay,
-                    colorHex = evt.colorHex,
-                    location = evt.location,
-                    description = evt.description,
-                    category = evt.category.name,
-                    presetId = targetPreset
-                )
+                eventDtoToEntity(evt, resolvedId = scopeId(evt.id, targetPreset), targetPreset = targetPreset)
             }
             eventDao.upsertAll(eventEntities)
 
@@ -666,7 +653,10 @@ class ScheduleRepositoryImpl(
                     colorHex = domain.colorHex,
                     location = domain.location,
                     description = domain.description,
-                    category = domain.category
+                    category = domain.category,
+                    repeatType = domain.repeatType,
+                    repeatDays = domain.repeatDays,
+                    repeatEndDateIso = domain.repeatEndDateIso
                 )
             }
 

@@ -5,7 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.weekflow.app.core.notifications.NotificationScheduler
 import com.weekflow.app.domain.model.Activity
 import com.weekflow.app.domain.model.CalendarEvent
+import com.weekflow.app.domain.model.CalendarEventOccurrence
 import com.weekflow.app.domain.model.DayScheduleUiModel
+import com.weekflow.app.domain.model.EventRepeatType
 import com.weekflow.app.domain.model.RegularReminder
 import com.weekflow.app.domain.model.SchedulePreset
 import com.weekflow.app.domain.model.ScheduleViewMode
@@ -36,7 +38,7 @@ data class CalendarUiState(
     val currentYearMonth: YearMonth = YearMonth.now(),
     val selectedDate: LocalDate = LocalDate.now(),
     val weekDays: List<LocalDate> = emptyList(),
-    val weekEvents: List<CalendarEvent> = emptyList(),
+    val weekEventOccurrences: List<CalendarEventOccurrence> = emptyList(),
     val weekDayTaskCounts: Map<String, Int> = emptyMap(),
     val isToday: Boolean = selectedDate == LocalDate.now(),
     val monthDays: List<CalendarDayUiModel> = emptyList(),
@@ -126,17 +128,17 @@ class CalendarViewModel(
 
         val monday = selectedDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
         val weekDays = (0..6).map { monday.plusDays(it.toLong()) }
-        val weekDateIsos = weekDays.map { it.toString() }.toSet()
-        val weekEvents = events
-            .filter { it.dateIso in weekDateIsos }
-            .sortedWith(
-                compareBy<CalendarEvent>(
-                    { it.dateIso },
-                    { !it.isAllDay },
-                    { it.parseStartTime() ?: LocalTime.MIN },
-                    { it.startTime ?: "" }
-                )
+        val weekEventOccurrences = weekDays.flatMap { day ->
+            events.filter { it.occursOnDate(day) }
+                .map { event -> CalendarEventOccurrence(event = event, occurrenceDate = day) }
+        }.sortedWith(
+            compareBy<CalendarEventOccurrence>(
+                { it.occurrenceDate },
+                { !it.event.isAllDay },
+                { it.event.parseStartTime() ?: LocalTime.MIN },
+                { it.event.startTime ?: "" }
             )
+        )
         val weekDayTaskCounts = weekDays.mapNotNull { day ->
             val dayIso = day.toString()
             val pendingCount = tasks.count { it.dueDateIso == dayIso && !it.isCompleted }
@@ -147,7 +149,7 @@ class CalendarViewModel(
             currentYearMonth = ym,
             selectedDate = selectedDate,
             weekDays = weekDays,
-            weekEvents = weekEvents,
+            weekEventOccurrences = weekEventOccurrences,
             weekDayTaskCounts = weekDayTaskCounts,
             isToday = selectedDate == LocalDate.now(),
             monthDays = monthDays,
@@ -209,29 +211,75 @@ class CalendarViewModel(
         }
     }
 
-    fun moveEvent(
-        event: CalendarEvent,
-        newDateIso: String,
-        newStartTime: String? = event.startTime,
-        newEndTime: String? = event.endTime,
-        newIsAllDay: Boolean = event.isAllDay
+    fun moveEventOccurrence(
+        occurrence: CalendarEventOccurrence,
+        targetDateIso: String,
+        newStartTime: String? = occurrence.event.startTime,
+        newEndTime: String? = occurrence.event.endTime,
+        newIsAllDay: Boolean = occurrence.event.isAllDay
     ) {
+        val event = occurrence.event
         val resolvedStart = if (newIsAllDay) null else newStartTime
         val resolvedEnd = if (newIsAllDay) null else newEndTime
-        if (event.dateIso == newDateIso &&
-            event.startTime == resolvedStart &&
-            event.endTime == resolvedEnd &&
-            event.isAllDay == newIsAllDay
-        ) return
-        viewModelScope.launch {
-            scheduleRepository.upsertEvent(
+        val targetDate = try {
+            LocalDate.parse(targetDateIso)
+        } catch (_: Exception) {
+            null
+        } ?: return
+
+        val updated = when (event.repeatType) {
+            EventRepeatType.NONE -> event.copy(
+                dateIso = targetDateIso,
+                startTime = resolvedStart,
+                endTime = resolvedEnd,
+                isAllDay = newIsAllDay
+            )
+            EventRepeatType.WEEKLY -> {
+                val updatedDays = if (occurrence.occurrenceDateIso != targetDateIso) {
+                    val oldWeekday = occurrence.occurrenceDate.dayOfWeek.value
+                    val newWeekday = targetDate.dayOfWeek.value
+                    val baseDays = event.repeatDays
+                        .filter { it in 1..7 }
+                        .ifEmpty { listOf(event.parseDate().dayOfWeek.value) }
+                    (baseDays.filter { it != oldWeekday } + newWeekday)
+                        .distinct()
+                        .sorted()
+                } else {
+                    event.repeatDays
+                }
+                val updatedDateIso = if (targetDate.isBefore(event.parseDate())) {
+                    targetDateIso
+                } else {
+                    event.dateIso
+                }
+                val currentEndDate = event.parseRepeatEndDate()
+                val updatedRepeatEndIso = if (currentEndDate != null && targetDate.isAfter(currentEndDate)) {
+                    targetDateIso
+                } else {
+                    event.repeatEndDateIso
+                }
                 event.copy(
-                    dateIso = newDateIso,
+                    dateIso = updatedDateIso,
+                    repeatDays = updatedDays,
+                    repeatEndDateIso = updatedRepeatEndIso,
                     startTime = resolvedStart,
                     endTime = resolvedEnd,
                     isAllDay = newIsAllDay
                 )
+            }
+            EventRepeatType.DAILY,
+            EventRepeatType.WEEKDAYS,
+            EventRepeatType.MONTHLY -> event.copy(
+                startTime = resolvedStart,
+                endTime = resolvedEnd,
+                isAllDay = newIsAllDay
             )
+        }
+
+        if (updated == event) return
+
+        viewModelScope.launch {
+            scheduleRepository.upsertEvent(updated)
             try {
                 notificationScheduler?.rescheduleAllNotifications()
             } catch (_: Exception) {}

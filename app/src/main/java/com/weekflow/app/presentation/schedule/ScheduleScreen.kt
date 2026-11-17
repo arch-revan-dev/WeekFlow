@@ -1,8 +1,10 @@
 package com.weekflow.app.presentation.schedule
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -283,28 +285,6 @@ fun ScheduleScreen(
                                 modifier = Modifier.weight(1f, fill = false)
                             )
 
-                            if (!uiState.isToday) {
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(IosBlue.copy(alpha = 0.14f))
-                                        .clickable {
-                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            viewModel.goToToday()
-                                        }
-                                        .padding(horizontal = 6.dp, vertical = 1.dp)
-                                ) {
-                                    Text(
-                                        text = "Сегодня",
-                                        fontSize = 10.5.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = IosBlue,
-                                        maxLines = 1,
-                                        softWrap = false
-                                    )
-                                }
-                            }
-
                             if (uiState.preferences.isTwoWeekCycleEnabled && uiState.activeWeekCycle != WeekCycle.EVERY_WEEK) {
                                 Box(
                                     modifier = Modifier
@@ -524,6 +504,71 @@ fun ScheduleScreen(
                         viewModel.setScheduleViewMode(mode)
                     }
                 )
+            }
+
+            AnimatedVisibility(
+                visible = !uiState.isToday,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                val relativeWeek = DateTimeUtils.getRelativeWeekLabel(uiState.selectedDate)
+                val isCurrentWeek = relativeWeek == "Эта неделя"
+                val dateSummary = buildString {
+                    append(DateTimeUtils.formatDateWithDay(uiState.selectedDate))
+                    if (!isCurrentWeek) {
+                        append(" • ")
+                        append(relativeWeek)
+                    }
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(iosColors.card)
+                        .border(
+                            BorderStroke(0.8.dp, IosBlue.copy(alpha = 0.22f)),
+                            RoundedCornerShape(12.dp)
+                        )
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = dateSummary,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = iosColors.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 8.dp)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(IosBlue.copy(alpha = 0.14f))
+                            .border(
+                                BorderStroke(0.8.dp, IosBlue.copy(alpha = 0.35f)),
+                                RoundedCornerShape(10.dp)
+                            )
+                            .clickable {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                viewModel.goToToday()
+                            }
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = "Сегодня",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = IosBlue,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
+                }
             }
 
             when (uiState.preferences.scheduleViewMode) {

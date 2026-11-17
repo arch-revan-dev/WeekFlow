@@ -51,7 +51,10 @@ data class EventDto(
     val colorHex: String = "#007AFF",
     val location: String = "",
     val description: String = "",
-    val category: ActivityCategory = ActivityCategory.PERSONAL
+    val category: ActivityCategory = ActivityCategory.PERSONAL,
+    val repeatType: EventRepeatType = EventRepeatType.NONE,
+    val repeatDays: List<Int> = emptyList(),
+    val repeatEndDateIso: String? = null
 )
 
 @Serializable

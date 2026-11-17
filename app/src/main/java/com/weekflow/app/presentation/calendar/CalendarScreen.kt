@@ -39,6 +39,7 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Celebration
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -80,6 +81,7 @@ import com.weekflow.app.core.localization.LocalAppProfile
 import com.weekflow.app.core.util.ColorParser
 import com.weekflow.app.core.util.DateTimeUtils
 import com.weekflow.app.domain.model.CalendarEvent
+import com.weekflow.app.domain.model.EventRepeatType
 import com.weekflow.app.domain.model.ScheduleTimelineItem
 import com.weekflow.app.domain.model.ScheduleViewMode
 import com.weekflow.app.domain.model.Task
@@ -356,11 +358,11 @@ fun CalendarScreen(
                 ScheduleViewMode.WEEK_TABLE_GRID -> {
                     EventsWeekTableView(
                         weekDays = uiState.weekDays,
-                        events = uiState.weekEvents,
+                        occurrences = uiState.weekEventOccurrences,
                         onEditEvent = onEditEvent,
                         onAddEventWithTime = onAddNewEventWithTime,
-                        onMoveEvent = { event, newDateIso, newStartTime, newEndTime, newIsAllDay ->
-                            viewModel.moveEvent(event, newDateIso, newStartTime, newEndTime, newIsAllDay)
+                        onMoveEventOccurrence = { occ, newDateIso, newStartTime, newEndTime, newIsAllDay ->
+                            viewModel.moveEventOccurrence(occ, newDateIso, newStartTime, newEndTime, newIsAllDay)
                         },
                         onDateClick = { date ->
                             viewModel.onDateSelected(date)
@@ -371,10 +373,10 @@ fun CalendarScreen(
                 }
 
                 ScheduleViewMode.TIMELINE_GRID -> {
-                    val weekDayIndicators = remember(uiState.weekDays, uiState.weekEvents) {
-                        val eventsByDate = uiState.weekEvents.groupBy { it.dateIso }
+                    val weekDayIndicators = remember(uiState.weekDays, uiState.weekEventOccurrences) {
+                        val occurrencesByDate = uiState.weekEventOccurrences.groupBy { it.occurrenceDate }
                         uiState.weekDays.associate { day ->
-                            day to eventsByDate[day.toString()].orEmpty().map { it.colorHex }.distinct()
+                            day to occurrencesByDate[day].orEmpty().map { it.event.colorHex }.distinct()
                         }
                     }
                     val weekTaskCountsByDate = remember(uiState.weekDays, uiState.weekDayTaskCounts) {
@@ -398,11 +400,11 @@ fun CalendarScreen(
 
                     EventsTimelineGridView(
                         selectedDate = uiState.selectedDate,
-                        events = uiState.weekEvents,
+                        occurrences = uiState.weekEventOccurrences,
                         onEditEvent = onEditEvent,
                         onAddEventWithTime = onAddNewEventWithTime,
-                        onMoveEvent = { event, newDateIso, newStartTime, newEndTime, newIsAllDay ->
-                            viewModel.moveEvent(event, newDateIso, newStartTime, newEndTime, newIsAllDay)
+                        onMoveEventOccurrence = { occ, newDateIso, newStartTime, newEndTime, newIsAllDay ->
+                            viewModel.moveEventOccurrence(occ, newDateIso, newStartTime, newEndTime, newIsAllDay)
                         }
                     )
                 }
@@ -653,7 +655,20 @@ private fun CalendarDayListBody(
 
             if (daySchedule != null && daySchedule.allDayEvents.isNotEmpty()) {
                 items(daySchedule.allDayEvents, key = { "cal_allday_${it.id}" }) { event ->
-                    AllDayEventCard(event = event, onClick = { onEditEvent(event) })
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        AllDayEventCard(event = event, onClick = { onEditEvent(event) })
+                        if (event.repeatType != EventRepeatType.NONE) {
+                            Icon(
+                                imageVector = Icons.Rounded.Repeat,
+                                contentDescription = event.repeatType.displayName,
+                                tint = ColorParser.parseHexColor(event.colorHex).copy(alpha = 0.8f),
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(top = 10.dp, end = 10.dp)
+                                    .size(13.dp)
+                            )
+                        }
+                    }
                 }
             }
 
@@ -692,10 +707,23 @@ private fun CalendarDayListBody(
                             )
                         }
                         is ScheduleTimelineItem.BreakWindow -> BreakWindowCard(breakWindow = item)
-                        is ScheduleTimelineItem.TimedEvent -> TimedEventCard(
-                            event = item.event,
-                            onClick = { onEditEvent(item.event) }
-                        )
+                        is ScheduleTimelineItem.TimedEvent -> Box(modifier = Modifier.fillMaxWidth()) {
+                            TimedEventCard(
+                                event = item.event,
+                                onClick = { onEditEvent(item.event) }
+                            )
+                            if (item.event.repeatType != EventRepeatType.NONE) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Repeat,
+                                    contentDescription = item.event.repeatType.displayName,
+                                    tint = ColorParser.parseHexColor(item.event.colorHex).copy(alpha = 0.8f),
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(top = 12.dp, end = 12.dp)
+                                        .size(13.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }

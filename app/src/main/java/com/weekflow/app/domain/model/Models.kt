@@ -179,12 +179,44 @@ data class CalendarEvent(
     val location: String = "",
     val description: String = "",
     val category: ActivityCategory = ActivityCategory.PERSONAL,
-    val presetId: String = SchedulePreset.DEFAULT_ID
+    val presetId: String = SchedulePreset.DEFAULT_ID,
+    val repeatType: EventRepeatType = EventRepeatType.NONE,
+    val repeatDays: List<Int> = emptyList(),
+    val repeatEndDateIso: String? = null
 ) {
     fun parseDate(): LocalDate = try {
         LocalDate.parse(dateIso)
     } catch (_: Exception) {
         LocalDate.now()
+    }
+
+    fun parseRepeatEndDate(): LocalDate? = repeatEndDateIso
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let {
+            try {
+                LocalDate.parse(it)
+            } catch (_: Exception) {
+                null
+            }
+        }
+
+    fun occursOnDate(targetDate: LocalDate): Boolean {
+        val start = parseDate()
+        if (targetDate.isBefore(start)) return false
+        val end = parseRepeatEndDate()
+        if (end != null && targetDate.isAfter(end)) return false
+        return when (repeatType) {
+            EventRepeatType.NONE -> targetDate == start
+            EventRepeatType.DAILY -> true
+            EventRepeatType.WEEKDAYS -> targetDate.dayOfWeek.value in 1..5
+            EventRepeatType.WEEKLY -> {
+                val allowedDays = repeatDays.filter { it in 1..7 }.ifEmpty { listOf(start.dayOfWeek.value) }
+                targetDate.dayOfWeek.value in allowedDays
+            }
+            EventRepeatType.MONTHLY ->
+                targetDate.dayOfMonth == minOf(start.dayOfMonth, targetDate.lengthOfMonth())
+        }
     }
 
     fun parseStartTime(): LocalTime? = startTime?.let {
@@ -202,6 +234,14 @@ data class CalendarEvent(
             null
         }
     }
+}
+
+data class CalendarEventOccurrence(
+    val event: CalendarEvent,
+    val occurrenceDate: LocalDate
+) {
+    val occurrenceDateIso: String
+        get() = occurrenceDate.toString()
 }
 
 @Serializable

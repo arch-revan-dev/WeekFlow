@@ -116,7 +116,7 @@ fun TimelineGridView(
     }
 
     val dayEvents = remember(events, selectedDate) {
-        events.filter { it.dateIso == selectedDate.toString() && !it.isAllDay }
+        events.filter { it.occursOnDate(selectedDate) && !it.isAllDay }
     }
 
     val renderItems = remember(daySlots, dayEvents) {

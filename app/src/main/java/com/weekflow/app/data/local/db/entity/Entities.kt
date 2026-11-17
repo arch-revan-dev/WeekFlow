@@ -9,6 +9,7 @@ import com.weekflow.app.domain.model.Activity
 import com.weekflow.app.domain.model.ActivityCategory
 import com.weekflow.app.domain.model.AppProfile
 import com.weekflow.app.domain.model.CalendarEvent
+import com.weekflow.app.domain.model.EventRepeatType
 import com.weekflow.app.domain.model.SchedulePreset
 import com.weekflow.app.domain.model.Slot
 import com.weekflow.app.domain.model.SubtaskItem
@@ -250,36 +251,72 @@ data class EventEntity(
     val description: String,
     val category: String, // ActivityCategory name
     @ColumnInfo(defaultValue = "'default'")
-    val presetId: String = SchedulePreset.DEFAULT_ID
+    val presetId: String = SchedulePreset.DEFAULT_ID,
+    @ColumnInfo(defaultValue = "'NONE'")
+    val repeatType: String = EventRepeatType.NONE.name,
+    @ColumnInfo(defaultValue = "'[]'")
+    val repeatDaysJson: String = "[]",
+    val repeatEndDateIso: String? = null
 ) {
-    fun toDomain(): CalendarEvent = CalendarEvent(
-        id = id,
-        title = title,
-        dateIso = dateIso,
-        startTime = startTime,
-        endTime = endTime,
-        isAllDay = isAllDay,
-        colorHex = colorHex,
-        location = location,
-        description = description,
-        category = try { ActivityCategory.valueOf(category) } catch (_: Exception) { ActivityCategory.PERSONAL },
-        presetId = presetId.ifBlank { SchedulePreset.DEFAULT_ID }
-    )
+    fun toDomain(): CalendarEvent {
+        val parsedRepeatType = try {
+            EventRepeatType.valueOf(repeatType)
+        } catch (_: Exception) {
+            EventRepeatType.NONE
+        }
+        val parsedRepeatDays = try {
+            if (repeatDaysJson.isBlank() || repeatDaysJson == "[]") emptyList()
+            else subtaskJsonParser.decodeFromString<List<Int>>(repeatDaysJson)
+                .filter { it in 1..7 }
+                .distinct()
+                .sorted()
+        } catch (_: Exception) {
+            emptyList()
+        }
+        return CalendarEvent(
+            id = id,
+            title = title,
+            dateIso = dateIso,
+            startTime = startTime,
+            endTime = endTime,
+            isAllDay = isAllDay,
+            colorHex = colorHex,
+            location = location,
+            description = description,
+            category = try { ActivityCategory.valueOf(category) } catch (_: Exception) { ActivityCategory.PERSONAL },
+            presetId = presetId.ifBlank { SchedulePreset.DEFAULT_ID },
+            repeatType = parsedRepeatType,
+            repeatDays = parsedRepeatDays,
+            repeatEndDateIso = repeatEndDateIso?.trim()?.takeIf { it.isNotEmpty() }
+        )
+    }
 
     companion object {
-        fun fromDomain(domain: CalendarEvent): EventEntity = EventEntity(
-            id = domain.id,
-            title = domain.title,
-            dateIso = domain.dateIso,
-            startTime = domain.startTime,
-            endTime = domain.endTime,
-            isAllDay = domain.isAllDay,
-            colorHex = domain.colorHex,
-            location = domain.location,
-            description = domain.description,
-            category = domain.category.name,
-            presetId = domain.presetId.ifBlank { SchedulePreset.DEFAULT_ID }
-        )
+        fun fromDomain(domain: CalendarEvent): EventEntity {
+            val cleanedDays = domain.repeatDays.filter { it in 1..7 }.distinct().sorted()
+            val serializedDays = try {
+                if (cleanedDays.isEmpty()) "[]"
+                else subtaskJsonParser.encodeToString(cleanedDays)
+            } catch (_: Exception) {
+                "[]"
+            }
+            return EventEntity(
+                id = domain.id,
+                title = domain.title,
+                dateIso = domain.dateIso,
+                startTime = domain.startTime,
+                endTime = domain.endTime,
+                isAllDay = domain.isAllDay,
+                colorHex = domain.colorHex,
+                location = domain.location,
+                description = domain.description,
+                category = domain.category.name,
+                presetId = domain.presetId.ifBlank { SchedulePreset.DEFAULT_ID },
+                repeatType = domain.repeatType.name,
+                repeatDaysJson = serializedDays,
+                repeatEndDateIso = domain.repeatEndDateIso?.trim()?.takeIf { it.isNotEmpty() }
+            )
+        }
     }
 }
 

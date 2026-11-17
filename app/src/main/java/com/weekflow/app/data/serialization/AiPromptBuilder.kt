@@ -53,7 +53,7 @@ object AiPromptBuilder {
         }
 
         return """
-Ты — ассистент WeekFlow (v4.4.2). Преобразуй фото, PDF или текст расписания и задач для пресета «${activePreset.name}» (профиль: «${profile.title}») СТРОГО в один валидный JSON-объект без лишнего текста.
+Ты — ассистент WeekFlow (v4.6.0). Преобразуй фото, PDF или текст расписания и задач для пресета «${activePreset.name}» (профиль: «${profile.title}») СТРОГО в один валидный JSON-объект без лишнего текста.
 
 ### СХЕМА JSON (CleanSchedulePayload):
 ```json
@@ -97,7 +97,10 @@ object AiPromptBuilder {
       "colorHex": "#FF2D55",
       "location": "${profile.locationPlaceholder}",
       "description": "Детали события",
-      "category": "${profile.defaultCategory.name}"
+      "category": "${profile.defaultCategory.name}",
+      "repeatType": "NONE",
+      "repeatDays": [],
+      "repeatEndDateIso": null
     }
   ],
   "tasks": [
@@ -119,16 +122,17 @@ $subtaskExampleBlock
 }
 ```
 
-### ПРАВИЛА (v4.4.2):
+### ПРАВИЛА (v4.6.0):
 1. `dayOfWeek`: `1` (Пн) .. `7` (Вс).
 2. `weekCycle`: `"EVERY_WEEK"`, `"NUMERATOR_A"` или `"DENOMINATOR_B"`.
 3. `periodOrder`: ${if (profile.defaultUsePeriodNumbers) "номер урока/пары (`1..15`) или `0` вне сетки звонков" else "всегда `0`"}.
 $sessionItemsRule
 5. Поле `gradesByDate` в `slots` (словарь оценок по датам `"YYYY-MM-DD": "оценка"`, например `{"2026-11-12": "5"}` или `{}`) и поле `attachments` в `tasks` (по умолчанию `[]`) опциональны.
-6. `category`: `"STUDY"`, `"WORK"`, `"HEALTH"`, `"PERSONAL"` или `"OTHER"`.
-7. `priority`: `"HIGH"`, `"MEDIUM"`, `"LOW"`, `"NONE"`.
-8. Время строго `"HH:mm"`, дата строго `"YYYY-MM-DD"`. `activityTypeId` и `linkedActivityId` должны ссылаться на существующий `id` из `activities`.
-9. Никаких комментариев `//` в JSON. Выдавай ТОЛЬКО валидный JSON.
+6. Повторы событий (`events`): `repeatType`: `"NONE"` (разовое), `"DAILY"`, `"WEEKDAYS"` (Пн–Пт), `"WEEKLY"` (по дням из `repeatDays`: список чисел `1..7`, где `1` — Пн, `7` — Вс) или `"MONTHLY"`; `repeatEndDateIso`: `"YYYY-MM-DD"` (включительно) или `null` (бессрочно).
+7. `category`: `"STUDY"`, `"WORK"`, `"HEALTH"`, `"PERSONAL"` или `"OTHER"`.
+8. `priority`: `"HIGH"`, `"MEDIUM"`, `"LOW"`, `"NONE"`.
+9. Время строго `"HH:mm"`, дата строго `"YYYY-MM-DD"`. `activityTypeId` и `linkedActivityId` должны ссылаться на существующий `id` из `activities`.
+10. Никаких комментариев `//` в JSON. Выдавай ТОЛЬКО валидный JSON.
 """.trimIndent()
     }
 }

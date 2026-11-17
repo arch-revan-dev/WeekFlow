@@ -31,7 +31,7 @@ import java.time.temporal.TemporalAdjusters
         TaskEntity::class,
         VacationEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 abstract class WeekFlowDatabase : RoomDatabase() {
@@ -44,6 +44,14 @@ abstract class WeekFlowDatabase : RoomDatabase() {
 
     companion object {
         const val DATABASE_NAME = "weekflow_database.db"
+
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `events` ADD COLUMN `repeatType` TEXT NOT NULL DEFAULT 'NONE'")
+                db.execSQL("ALTER TABLE `events` ADD COLUMN `repeatDaysJson` TEXT NOT NULL DEFAULT '[]'")
+                db.execSQL("ALTER TABLE `events` ADD COLUMN `repeatEndDateIso` TEXT")
+            }
+        }
 
         val MIGRATION_7_8 = object : Migration(7, 8) {
             override fun migrate(db: SupportSQLiteDatabase) {

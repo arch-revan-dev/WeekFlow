@@ -277,6 +277,15 @@ enum class ScheduleViewMode(val displayName: String) {
 }
 
 @Serializable
+enum class EventRepeatType(val displayName: String, val shortLabel: String) {
+    NONE("Не повторяется", ""),
+    DAILY("Каждый день", "Ежедневно"),
+    WEEKDAYS("По будням (Пн–Пт)", "Пн–Пт"),
+    WEEKLY("По дням недели", "По дням"),
+    MONTHLY("Каждый месяц", "Ежемесячно")
+}
+
+@Serializable
 enum class CardDensity(val displayName: String, val verticalPaddingDp: Int) {
     COMPACT("Компактная", 6),
     STANDARD("Стандартная", 10),

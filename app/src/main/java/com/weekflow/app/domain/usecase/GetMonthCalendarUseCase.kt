@@ -78,7 +78,7 @@ class GetMonthCalendarUseCase(
             }
 
             // События
-            val dayEvents = events.filter { it.dateIso == dateIso }
+            val dayEvents = events.filter { it.occursOnDate(date) }
 
             // Задачи
             val dayTasks = tasks.filter { it.dueDateIso == dateIso && !it.isCompleted }

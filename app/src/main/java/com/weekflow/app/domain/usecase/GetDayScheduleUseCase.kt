@@ -102,7 +102,7 @@ class GetDayScheduleUseCase(
         val unassignedDayTasks = dayTasks.filter { it.id !in assignedTaskIds }
 
         // 6. События на этот день
-        val dayEvents = events.filter { it.dateIso == dateIso }
+        val dayEvents = events.filter { it.occursOnDate(targetDate) }
         val allDayEvents = dayEvents.filter { it.isAllDay }
         val timedEvents = dayEvents.filter { !it.isAllDay }.sortedBy { it.parseStartTime() ?: LocalTime.MIN }
 

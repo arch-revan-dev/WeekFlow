@@ -4,6 +4,7 @@ import com.weekflow.app.domain.model.ActivityCategory
 import com.weekflow.app.domain.model.ActivityDto
 import com.weekflow.app.domain.model.CleanSchedulePayload
 import com.weekflow.app.domain.model.EventDto
+import com.weekflow.app.domain.model.EventRepeatType
 import com.weekflow.app.domain.model.SlotDto
 import com.weekflow.app.domain.model.TaskDto
 import com.weekflow.app.domain.model.WeekCycle
@@ -186,6 +187,30 @@ object JsonImportExportManager {
 
             val cleanStart = evt.startTime?.let { normalizeTime(it, fallback = "10:00") }
             val cleanEnd = evt.endTime?.let { normalizeTime(it, fallback = "11:00") }
+            val cleanRepeatDays = if (evt.repeatType == EventRepeatType.WEEKLY) {
+                evt.repeatDays.filter { it in 1..7 }.distinct().sorted()
+            } else {
+                emptyList()
+            }
+            val cleanRepeatEndDate = if (evt.repeatType == EventRepeatType.NONE) {
+                null
+            } else {
+                evt.repeatEndDateIso?.trim()?.takeIf { it.isNotEmpty() }?.let { rawEnd ->
+                    val parsedEnd = runCatching { LocalDate.parse(rawEnd) }.getOrNull()
+                    val parsedStart = runCatching { LocalDate.parse(cleanDate) }.getOrNull()
+                    when {
+                        !dateRegex.matches(rawEnd) || parsedEnd == null -> {
+                            warnings.add("Для события '${evt.title}' игнорирована некорректная дата окончания повтора ($rawEnd)")
+                            null
+                        }
+                        parsedStart != null && parsedEnd.isBefore(parsedStart) -> {
+                            warnings.add("Для события '${evt.title}' дата окончания повтора ($rawEnd) раньше начала ($cleanDate) и была сброшена")
+                            null
+                        }
+                        else -> rawEnd
+                    }
+                }
+            }
 
             validEvents.add(
                 evt.copy(
@@ -194,7 +219,9 @@ object JsonImportExportManager {
                     dateIso = cleanDate,
                     startTime = cleanStart,
                     endTime = cleanEnd,
-                    colorHex = normalizeColorHex(evt.colorHex, evt.category)
+                    colorHex = normalizeColorHex(evt.colorHex, evt.category),
+                    repeatDays = cleanRepeatDays,
+                    repeatEndDateIso = cleanRepeatEndDate
                 )
             )
         }
