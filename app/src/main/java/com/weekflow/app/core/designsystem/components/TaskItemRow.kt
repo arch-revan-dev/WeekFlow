@@ -68,6 +68,7 @@ import com.weekflow.app.core.designsystem.IosRed
 import com.weekflow.app.core.designsystem.LocalIosColors
 import com.weekflow.app.core.util.ColorParser
 import com.weekflow.app.core.util.DateTimeUtils
+import com.weekflow.app.core.util.TaskAttachmentHelper
 import com.weekflow.app.domain.model.Activity
 import com.weekflow.app.domain.model.Task
 import com.weekflow.app.domain.model.TaskPriority
@@ -107,6 +108,9 @@ fun TaskItemRow(
     var isTitleOverflowing by remember(task.id, task.title) { mutableStateOf(false) }
     var isNoteOverflowing by remember(task.id, task.note) { mutableStateOf(false) }
     val hasLongContent = isTitleOverflowing || isNoteOverflowing || task.subtasks.size > 4 || isExpanded
+    val firstImageAttachment = remember(task.attachments) {
+        task.attachments.firstOrNull { TaskAttachmentHelper.isImageAttachment(it) }
+    }
 
     val taskDueDate = task.parseDueDate()
     val isOverdue = taskDueDate != null && taskDueDate.isBefore(today) && !task.isCompleted
@@ -387,6 +391,28 @@ fun TaskItemRow(
                                                 color = iosColors.textSecondary,
                                                 maxLines = 1,
                                                 softWrap = false
+                                            )
+                                        }
+                                    }
+
+                                    if (firstImageAttachment != null) {
+                                        Box(
+                                            modifier = Modifier
+                                                .height(20.dp)
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(IosBlue.copy(alpha = 0.12f))
+                                                .clickable {
+                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    TaskAttachmentHelper.copyImageToClipboard(context, firstImageAttachment)
+                                                }
+                                                .padding(horizontal = 6.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.ContentCopy,
+                                                contentDescription = "Копировать фото",
+                                                tint = IosBlue,
+                                                modifier = Modifier.size(12.dp)
                                             )
                                         }
                                     }

@@ -59,6 +59,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -70,16 +71,21 @@ import com.weekflow.app.core.designsystem.IosBlue
 import com.weekflow.app.core.designsystem.IosRed
 import com.weekflow.app.core.designsystem.LocalIosColors
 import com.weekflow.app.core.designsystem.components.FocusTimerDialog
+import com.weekflow.app.core.designsystem.components.IosSegmentedControl
 import com.weekflow.app.core.designsystem.components.LessonSlotCard
 import com.weekflow.app.core.designsystem.components.TaskItemRow
+import com.weekflow.app.core.designsystem.components.WeekStripHeader
 import com.weekflow.app.core.designsystem.components.WorkoutPlayerSheet
 import com.weekflow.app.core.localization.LocalAppProfile
 import com.weekflow.app.core.util.ColorParser
 import com.weekflow.app.core.util.DateTimeUtils
 import com.weekflow.app.domain.model.CalendarEvent
 import com.weekflow.app.domain.model.ScheduleTimelineItem
+import com.weekflow.app.domain.model.ScheduleViewMode
 import com.weekflow.app.domain.model.Task
 import com.weekflow.app.domain.usecase.CalendarDayUiModel
+import com.weekflow.app.presentation.calendar.components.EventsTimelineGridView
+import com.weekflow.app.presentation.calendar.components.EventsWeekTableView
 import com.weekflow.app.presentation.editors.PresetManagerSheet
 import com.weekflow.app.presentation.schedule.AllDayEventCard
 import com.weekflow.app.presentation.schedule.BreakWindowCard
@@ -96,6 +102,9 @@ fun CalendarScreen(
     onEditSlot: (slotId: String, dateIso: String) -> Unit,
     onAddNewTaskForSlot: (activityId: String, slotId: String, referenceDate: LocalDate) -> Unit,
     onEditTask: (Task) -> Unit = {},
+    onAddNewEventWithTime: (dateIso: String, startTime: String?, endTime: String?, isAllDay: Boolean) -> Unit = { dateIso, _, _, _ ->
+        onAddNewEvent(dateIso)
+    },
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -111,6 +120,8 @@ fun CalendarScreen(
     val activityMap = remember(uiState.allActivities) {
         uiState.allActivities.associateBy { it.id }
     }
+    val calendarViewMode = uiState.preferences.calendarViewMode
+    val showTodayPill = !uiState.isToday || uiState.currentYearMonth != YearMonth.now()
 
     if (showPresetSheet) {
         PresetManagerSheet(
@@ -175,90 +186,70 @@ fun CalendarScreen(
             TopAppBar(
                 windowInsets = TopAppBarDefaults.windowInsets,
                 title = {
-                    Column {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = DateTimeUtils.formatMonthYearHeader(uiState.currentYearMonth.atDay(1)),
-                                fontSize = 19.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = iosColors.textPrimary,
-                                maxLines = 1
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .widthIn(max = 135.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(presetColor.copy(alpha = 0.14f))
-                                    .border(
-                                        BorderStroke(1.dp, presetColor.copy(alpha = 0.4f)),
-                                        RoundedCornerShape(10.dp)
-                                    )
-                                    .clickable {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        showPresetSheet = true
-                                    }
-                                    .padding(horizontal = 7.dp, vertical = 2.5.dp)
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
-                                ) {
-                                    Text(text = uiState.activePreset.iconEmoji, fontSize = 11.sp)
-                                    Text(
-                                        text = uiState.activePreset.name,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = presetColor,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f, fill = false)
-                                    )
-                                    Icon(
-                                        imageVector = Icons.Rounded.KeyboardArrowDown,
-                                        contentDescription = "Выбрать пресет",
-                                        tint = presetColor,
-                                        modifier = Modifier.size(13.dp)
-                                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = DateTimeUtils.formatMonthYearHeader(uiState.currentYearMonth.atDay(1)),
+                            fontSize = 19.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = iosColors.textPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        Box(
+                            modifier = Modifier
+                                .widthIn(max = 135.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(presetColor.copy(alpha = 0.14f))
+                                .border(
+                                    BorderStroke(1.dp, presetColor.copy(alpha = 0.4f)),
+                                    RoundedCornerShape(10.dp)
+                                )
+                                .clickable {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    showPresetSheet = true
                                 }
-                            }
-                        }
-
-                        if (uiState.selectedDate != LocalDate.now() || uiState.currentYearMonth != YearMonth.now()) {
-                            Box(
-                                modifier = Modifier
-                                    .padding(top = 3.dp)
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(IosBlue.copy(alpha = 0.14f))
-                                    .clickable {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        viewModel.goToToday()
-                                    }
-                                    .padding(horizontal = 7.dp, vertical = 2.dp)
+                                .padding(horizontal = 7.dp, vertical = 2.5.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
                             ) {
+                                Text(text = uiState.activePreset.iconEmoji, fontSize = 11.sp)
                                 Text(
-                                    text = "Сегодня",
-                                    fontSize = 10.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = IosBlue
+                                    text = uiState.activePreset.name,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = presetColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
+                                Icon(
+                                    imageVector = Icons.Rounded.KeyboardArrowDown,
+                                    contentDescription = "Выбрать пресет",
+                                    tint = presetColor,
+                                    modifier = Modifier.size(13.dp)
                                 )
                             }
                         }
                     }
                 },
                 actions = {
+                    val isDayList = calendarViewMode == ScheduleViewMode.DAY_LIST
                     IconButton(
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            viewModel.onPreviousMonth()
+                            if (isDayList) viewModel.onPreviousMonth() else viewModel.onPreviousWeek()
                         },
                         modifier = Modifier.size(34.dp)
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
-                            contentDescription = "Предыдущий месяц",
+                            contentDescription = if (isDayList) "Предыдущий месяц" else "Предыдущая неделя",
                             tint = IosBlue
                         )
                     }
@@ -266,13 +257,13 @@ fun CalendarScreen(
                     IconButton(
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            viewModel.onNextMonth()
+                            if (isDayList) viewModel.onNextMonth() else viewModel.onNextWeek()
                         },
                         modifier = Modifier.size(34.dp)
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                            contentDescription = "Следующий месяц",
+                            contentDescription = if (isDayList) "Следующий месяц" else "Следующая неделя",
                             tint = IosBlue
                         )
                     }
@@ -312,352 +303,469 @@ fun CalendarScreen(
                 .fillMaxSize()
                 .padding(top = innerPadding.calculateTopPadding())
         ) {
-            // Days of week header (Пн..Вс)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.SpaceAround
-            ) {
-                listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс").forEachIndexed { index, day ->
-                    val isWeekend = index == 6 || (index == 5 && uiState.preferences.isSaturdayWeekend)
-                    Text(
-                        text = day,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = if (isWeekend) IosRed.copy(alpha = 0.8f) else iosColors.textSecondary,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-
-            // Month Grid (Full Month or Selected Week Row) with smooth spring animation & vertical swipe
-            val daysToShow = remember(isMonthExpanded, uiState.monthDays, uiState.selectedDate) {
-                if (isMonthExpanded) {
-                    uiState.monthDays
-                } else {
-                    val chunks = uiState.monthDays.chunked(7)
-                    val selectedChunk = chunks.firstOrNull { chunk -> chunk.any { it.date == uiState.selectedDate } }
-                        ?: chunks.firstOrNull() ?: emptyList()
-                    selectedChunk
-                }
-            }
-
-            var accumulatedVerticalDrag by remember { mutableStateOf(0f) }
-
+            // Segmented mode switcher: День / Таблица / Сетка
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .animateContentSize(
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioLowBouncy,
-                            stiffness = Spring.StiffnessMediumLow
-                        )
-                    )
-                    .pointerInput(isMonthExpanded) {
-                        detectVerticalDragGestures(
-                            onDragStart = { accumulatedVerticalDrag = 0f },
-                            onVerticalDrag = { _, dragAmount ->
-                                accumulatedVerticalDrag += dragAmount
-                                if (accumulatedVerticalDrag < -32f && isMonthExpanded) {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    isMonthExpanded = false
-                                    accumulatedVerticalDrag = 0f
-                                } else if (accumulatedVerticalDrag > 32f && !isMonthExpanded) {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    isMonthExpanded = true
-                                    accumulatedVerticalDrag = 0f
-                                }
-                            }
-                        )
-                    }
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
             ) {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(7),
-                    userScrollEnabled = false,
+                IosSegmentedControl(
+                    items = listOf("День", "Таблица", "Сетка"),
+                    selectedIndex = when (calendarViewMode) {
+                        ScheduleViewMode.DAY_LIST -> 0
+                        ScheduleViewMode.WEEK_TABLE_GRID -> 1
+                        ScheduleViewMode.TIMELINE_GRID -> 2
+                    },
+                    onItemSelected = { idx ->
+                        val mode = when (idx) {
+                            1 -> ScheduleViewMode.WEEK_TABLE_GRID
+                            2 -> ScheduleViewMode.TIMELINE_GRID
+                            else -> ScheduleViewMode.DAY_LIST
+                        }
+                        viewModel.setCalendarViewMode(mode)
+                    }
+                )
+            }
+
+            if (calendarViewMode != ScheduleViewMode.DAY_LIST) {
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 8.dp)
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    items(daysToShow, key = { it.date.toString() }) { dayModel ->
-                        CalendarDayCell(
-                            day = dayModel,
-                            isSelected = dayModel.date == uiState.selectedDate,
-                            isSaturdayWeekend = uiState.preferences.isSaturdayWeekend,
+                    Text(
+                        text = DateTimeUtils.formatWeekRange(uiState.weekDays),
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = iosColors.textSecondary
+                    )
+                    if (showTodayPill) {
+                        TodayPillButton(
                             onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                viewModel.onDateSelected(dayModel.date)
+                                viewModel.goToToday()
                             }
                         )
                     }
                 }
             }
 
-            val chevronRotation by animateFloatAsState(
-                targetValue = if (isMonthExpanded) 180f else 0f,
-                animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                label = "CalendarHandleChevron"
+            when (calendarViewMode) {
+                ScheduleViewMode.WEEK_TABLE_GRID -> {
+                    EventsWeekTableView(
+                        weekDays = uiState.weekDays,
+                        events = uiState.weekEvents,
+                        onEditEvent = onEditEvent,
+                        onAddEventWithTime = onAddNewEventWithTime,
+                        onMoveEvent = { event, newDateIso, newStartTime, newEndTime, newIsAllDay ->
+                            viewModel.moveEvent(event, newDateIso, newStartTime, newEndTime, newIsAllDay)
+                        },
+                        onDateClick = { date ->
+                            viewModel.onDateSelected(date)
+                            viewModel.setCalendarViewMode(ScheduleViewMode.DAY_LIST)
+                        },
+                        isSaturdayWeekend = uiState.preferences.isSaturdayWeekend
+                    )
+                }
+
+                ScheduleViewMode.TIMELINE_GRID -> {
+                    val weekDayIndicators = remember(uiState.weekDays, uiState.weekEvents) {
+                        val eventsByDate = uiState.weekEvents.groupBy { it.dateIso }
+                        uiState.weekDays.associate { day ->
+                            day to eventsByDate[day.toString()].orEmpty().map { it.colorHex }.distinct()
+                        }
+                    }
+                    val weekTaskCountsByDate = remember(uiState.weekDays, uiState.weekDayTaskCounts) {
+                        uiState.weekDays.mapNotNull { day ->
+                            uiState.weekDayTaskCounts[day.toString()]?.let { day to it }
+                        }.toMap()
+                    }
+
+                    WeekStripHeader(
+                        selectedDate = uiState.selectedDate,
+                        weekDays = uiState.weekDays,
+                        dayIndicators = weekDayIndicators,
+                        onDateSelected = { date -> viewModel.onDateSelected(date) },
+                        isSaturdayWeekend = uiState.preferences.isSaturdayWeekend,
+                        taskCountsByDate = weekTaskCountsByDate,
+                        onPreviousWeek = { viewModel.onPreviousWeek() },
+                        onNextWeek = { viewModel.onNextWeek() }
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    EventsTimelineGridView(
+                        selectedDate = uiState.selectedDate,
+                        events = uiState.weekEvents,
+                        onEditEvent = onEditEvent,
+                        onAddEventWithTime = onAddNewEventWithTime,
+                        onMoveEvent = { event, newDateIso, newStartTime, newEndTime, newIsAllDay ->
+                            viewModel.moveEvent(event, newDateIso, newStartTime, newEndTime, newIsAllDay)
+                        }
+                    )
+                }
+
+                ScheduleViewMode.DAY_LIST -> {
+                    CalendarDayListBody(
+                        uiState = uiState,
+                        activityMap = activityMap,
+                        isMonthExpanded = isMonthExpanded,
+                        showTodayPill = showTodayPill,
+                        onSetMonthExpanded = { isMonthExpanded = it },
+                        viewModel = viewModel,
+                        onEditEvent = onEditEvent,
+                        onEditSlot = onEditSlot,
+                        onAddNewTaskForSlot = onAddNewTaskForSlot,
+                        onEditTask = onEditTask,
+                        onStartFocusTimer = { focusTimerTitle = it },
+                        onStartInteractiveSession = if (appProfile.supportsWorkouts) {
+                            { activeSessionSlotId = it }
+                        } else null
+                    )
+                }
+            }
+        }
+    }
+    }
+}
+
+private fun Modifier.calendarExpandSwipe(
+    isMonthExpanded: Boolean,
+    thresholdPx: Float,
+    haptic: HapticFeedback,
+    consumeChange: Boolean = false,
+    onSetMonthExpanded: (Boolean) -> Unit
+): Modifier = pointerInput(isMonthExpanded) {
+    var dragDelta = 0f
+    detectVerticalDragGestures(
+        onDragStart = { dragDelta = 0f },
+        onVerticalDrag = { change, dragAmount ->
+            if (consumeChange) change.consume()
+            dragDelta += dragAmount
+            if (dragDelta < -thresholdPx && isMonthExpanded) {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onSetMonthExpanded(false)
+                dragDelta = 0f
+            } else if (dragDelta > thresholdPx && !isMonthExpanded) {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onSetMonthExpanded(true)
+                dragDelta = 0f
+            }
+        }
+    )
+}
+
+@Composable
+private fun CalendarDayListBody(
+    uiState: CalendarUiState,
+    activityMap: Map<String, com.weekflow.app.domain.model.Activity>,
+    isMonthExpanded: Boolean,
+    showTodayPill: Boolean,
+    onSetMonthExpanded: (Boolean) -> Unit,
+    viewModel: CalendarViewModel,
+    onEditEvent: (CalendarEvent) -> Unit,
+    onEditSlot: (slotId: String, dateIso: String) -> Unit,
+    onAddNewTaskForSlot: (activityId: String, slotId: String, referenceDate: LocalDate) -> Unit,
+    onEditTask: (Task) -> Unit,
+    onStartFocusTimer: (String) -> Unit,
+    onStartInteractiveSession: ((String) -> Unit)?
+) {
+    val iosColors = LocalIosColors.current
+    val appProfile = LocalAppProfile.current
+    val haptic = LocalHapticFeedback.current
+
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceAround
+    ) {
+        listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс").forEachIndexed { index, day ->
+            val isWeekend = index == 6 || (index == 5 && uiState.preferences.isSaturdayWeekend)
+            Text(
+                text = day,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = if (isWeekend) IosRed.copy(alpha = 0.8f) else iosColors.textSecondary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.weight(1f)
             )
+        }
+    }
 
-            // Interactive swipe & tap handle bar between month grid and day sheet
-            Column(
+    val daysToShow = remember(isMonthExpanded, uiState.monthDays, uiState.selectedDate) {
+        if (isMonthExpanded) {
+            uiState.monthDays
+        } else {
+            val chunks = uiState.monthDays.chunked(7)
+            chunks.firstOrNull { chunk -> chunk.any { it.date == uiState.selectedDate } }
+                ?: chunks.firstOrNull() ?: emptyList()
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize(
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioLowBouncy,
+                    stiffness = Spring.StiffnessMediumLow
+                )
+            )
+            .calendarExpandSwipe(isMonthExpanded, 32f, haptic, onSetMonthExpanded = onSetMonthExpanded)
+    ) {
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(7),
+            userScrollEnabled = false,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+        ) {
+            items(daysToShow, key = { it.date.toString() }) { dayModel ->
+                CalendarDayCell(
+                    day = dayModel,
+                    isSelected = dayModel.date == uiState.selectedDate,
+                    isSaturdayWeekend = uiState.preferences.isSaturdayWeekend,
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        viewModel.onDateSelected(dayModel.date)
+                    }
+                )
+            }
+        }
+    }
+
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (isMonthExpanded) 180f else 0f,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "CalendarHandleChevron"
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .calendarExpandSwipe(isMonthExpanded, 20f, haptic, consumeChange = true, onSetMonthExpanded = onSetMonthExpanded)
+            .clickable {
+                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onSetMonthExpanded(!isMonthExpanded)
+            }
+            .padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier
+                .clip(RoundedCornerShape(10.dp))
+                .background(iosColors.card.copy(alpha = 0.7f))
+                .padding(horizontal = 12.dp, vertical = 3.dp)
+        ) {
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .pointerInput(isMonthExpanded) {
-                        var dragSum = 0f
-                        detectVerticalDragGestures(
-                            onDragStart = { dragSum = 0f },
-                            onVerticalDrag = { change, dragAmount ->
-                                change.consume()
-                                dragSum += dragAmount
-                                if (dragSum < -20f && isMonthExpanded) {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    isMonthExpanded = false
-                                    dragSum = 0f
-                                } else if (dragSum > 20f && !isMonthExpanded) {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    isMonthExpanded = true
-                                    dragSum = 0f
-                                }
-                            }
-                        )
-                    }
-                    .clickable {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        isMonthExpanded = !isMonthExpanded
-                    }
-                    .padding(vertical = 4.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(iosColors.card.copy(alpha = 0.7f))
-                        .padding(horizontal = 12.dp, vertical = 3.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .width(28.dp)
-                            .height(4.dp)
-                            .clip(RoundedCornerShape(2.dp))
-                            .background(iosColors.textSecondary.copy(alpha = 0.45f))
-                    )
-                    Icon(
-                        imageVector = Icons.Rounded.KeyboardArrowDown,
-                        contentDescription = null,
-                        tint = iosColors.textSecondary,
-                        modifier = Modifier
-                            .size(14.dp)
-                            .rotate(chevronRotation)
-                    )
-                }
+                    .width(28.dp)
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(iosColors.textSecondary.copy(alpha = 0.45f))
+            )
+            Icon(
+                imageVector = Icons.Rounded.KeyboardArrowDown,
+                contentDescription = null,
+                tint = iosColors.textSecondary,
+                modifier = Modifier.size(14.dp).rotate(chevronRotation)
+            )
+        }
+    }
+
+    val daySchedule = uiState.selectedDaySchedule
+    val visibleTimelineItems = remember(daySchedule, uiState.preferences.showBreaks) {
+        val items = daySchedule?.timelineItems ?: emptyList()
+        if (uiState.preferences.showBreaks) items else items.filter { it !is ScheduleTimelineItem.BreakWindow }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+            .background(iosColors.card)
+    ) {
+        // Pinned Day Title header with TodayPillButton so "Сегодня" never scrolls out of sight
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .calendarExpandSwipe(isMonthExpanded, 24f, haptic, onSetMonthExpanded = onSetMonthExpanded)
+                .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column {
+                Text(
+                    text = DateTimeUtils.getDayOfWeekFull(uiState.selectedDate.dayOfWeek.value),
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = iosColors.textPrimary
+                )
+                Text(
+                    text = DateTimeUtils.formatDateWithDay(uiState.selectedDate),
+                    fontSize = 13.sp,
+                    color = iosColors.textSecondary
+                )
             }
 
-            // Lower half: Selected Day Summary
-            val daySchedule = uiState.selectedDaySchedule
-            val visibleTimelineItems = remember(daySchedule, uiState.preferences.showBreaks) {
-                val items = daySchedule?.timelineItems ?: emptyList()
-                if (uiState.preferences.showBreaks) {
-                    items
-                } else {
-                    items.filter { it !is ScheduleTimelineItem.BreakWindow }
-                }
+            if (showTodayPill) {
+                TodayPillButton(
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        viewModel.goToToday()
+                    }
+                )
             }
+        }
 
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                    .background(iosColors.card),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                // Day Title header with swipe gesture to expand/collapse calendar
-                item(key = "day_header") {
+        LazyColumn(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            if (daySchedule != null && daySchedule.holidayOrVacationTitle != null) {
+                item(key = "holiday_summary") {
                     Row(
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .pointerInput(isMonthExpanded) {
-                                var dragDelta = 0f
-                                detectVerticalDragGestures(
-                                    onDragStart = { dragDelta = 0f },
-                                    onVerticalDrag = { _, dragAmount ->
-                                        dragDelta += dragAmount
-                                        if (dragDelta < -24f && isMonthExpanded) {
-                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            isMonthExpanded = false
-                                            dragDelta = 0f
-                                        } else if (dragDelta > 24f && !isMonthExpanded) {
-                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                            isMonthExpanded = true
-                                            dragDelta = 0f
-                                        }
-                                    }
-                                )
-                            },
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(IosRed.copy(alpha = 0.1f))
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
                     ) {
-                        Column {
-                            Text(
-                                text = DateTimeUtils.getDayOfWeekFull(uiState.selectedDate.dayOfWeek.value),
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = iosColors.textPrimary
-                            )
-                            Text(
-                                text = DateTimeUtils.formatDateWithDay(uiState.selectedDate),
-                                fontSize = 13.sp,
-                                color = iosColors.textSecondary
-                            )
-                        }
-                    }
-                }
-
-                // Holiday or Vacation notice
-                if (daySchedule != null && daySchedule.holidayOrVacationTitle != null) {
-                    item(key = "holiday_summary") {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(IosRed.copy(alpha = 0.1f))
-                                .padding(horizontal = 12.dp, vertical = 8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Celebration,
-                                contentDescription = null,
-                                tint = IosRed,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = daySchedule.holidayOrVacationTitle,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = IosRed
-                            )
-                        }
-                    }
-                }
-
-                // All-day events
-                if (daySchedule != null && daySchedule.allDayEvents.isNotEmpty()) {
-                    items(daySchedule.allDayEvents, key = { "cal_allday_${it.id}" }) { event ->
-                        AllDayEventCard(
-                            event = event,
-                            onClick = { onEditEvent(event) }
+                        Icon(
+                            imageVector = Icons.Rounded.Celebration,
+                            contentDescription = null,
+                            tint = IosRed,
+                            modifier = Modifier.size(16.dp)
                         )
-                    }
-                }
-
-                // Timeline Items
-                if (visibleTimelineItems.isNotEmpty()) {
-                    items(
-                        items = visibleTimelineItems,
-                        key = { item ->
-                            when (item) {
-                                is ScheduleTimelineItem.Lesson -> "cal_lesson_${item.details.slot.id}"
-                                is ScheduleTimelineItem.BreakWindow -> "cal_break_${item.startTime}_${item.endTime}"
-                                is ScheduleTimelineItem.TimedEvent -> "cal_event_${item.event.id}"
-                            }
-                        }
-                    ) { item ->
-                        when (item) {
-                            is ScheduleTimelineItem.Lesson -> {
-                                LessonSlotCard(
-                                    details = item.details,
-                                    cardStyle = uiState.preferences.cardStyle,
-                                    cardDensity = uiState.preferences.cardDensity,
-                                    cornerRadiusDp = uiState.preferences.cornerRadiusDp,
-                                    showProgressBar = uiState.preferences.showProgressBar,
-                                    isTwoWeekCycleEnabled = uiState.preferences.isTwoWeekCycleEnabled,
-                                    isToday = uiState.selectedDate == LocalDate.now(),
-                                    slotGrade = item.details.slot.gradeForDate(uiState.selectedDate),
-                                    onCardClick = { onEditSlot(item.details.slot.id, uiState.selectedDate.toString()) },
-                                    onAddTaskClick = {
-                                        onAddNewTaskForSlot(
-                                            item.details.activity.id,
-                                            item.details.slot.id,
-                                            uiState.selectedDate
-                                        )
-                                    },
-                                    onTaskToggle = { task -> viewModel.toggleTask(task) },
-                                    onTaskClick = { task -> onEditTask(task) },
-                                    onStartFocusTimer = { focusTimerTitle = item.details.activity.name },
-                                    onStartInteractiveSession = if (appProfile.supportsWorkouts) {
-                                        { activeSessionSlotId = item.details.slot.id }
-                                    } else {
-                                        null
-                                    }
-                                )
-                            }
-                            is ScheduleTimelineItem.BreakWindow -> {
-                                BreakWindowCard(breakWindow = item)
-                            }
-                            is ScheduleTimelineItem.TimedEvent -> {
-                                TimedEventCard(
-                                    event = item.event,
-                                    onClick = { onEditEvent(item.event) }
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Unassigned tasks for the selected day
-                if (daySchedule != null && daySchedule.unassignedTasks.isNotEmpty()) {
-                    item(key = "cal_unassigned_header") {
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "ЗАДАЧИ НА ДЕНЬ",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = iosColors.textSecondary,
-                            modifier = Modifier.padding(top = 6.dp, start = 4.dp)
-                        )
-                    }
-                    items(daySchedule.unassignedTasks, key = { "cal_unassigned_${it.id}" }) { task ->
-                        TaskItemRow(
-                            task = task,
-                            linkedActivity = task.linkedActivityId?.let { activityMap[it] },
-                            onToggleCompleted = { viewModel.toggleTask(task) },
-                            onClick = { onEditTask(task) },
-                            onFocusTimerClick = { focusTimerTitle = task.title },
-                            onPostponeTomorrowClick = { viewModel.postponeTaskToTomorrow(task) },
-                            onDeleteClick = { viewModel.deleteTask(task.id) },
-                            onToggleSubtask = { subId -> viewModel.toggleSubtask(task, subId) }
+                            text = daySchedule.holidayOrVacationTitle,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = IosRed
                         )
                     }
                 }
+            }
 
-                if (daySchedule != null &&
-                    visibleTimelineItems.isEmpty() &&
-                    daySchedule.allDayEvents.isEmpty() &&
-                    daySchedule.unassignedTasks.isEmpty()
-                ) {
-                    item(key = "cal_empty") {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 24.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "На этот день событий и ${appProfile.pluralGenitive} нет",
-                                fontSize = 14.sp,
-                                color = iosColors.textSecondary,
-                                textAlign = TextAlign.Center
+            if (daySchedule != null && daySchedule.allDayEvents.isNotEmpty()) {
+                items(daySchedule.allDayEvents, key = { "cal_allday_${it.id}" }) { event ->
+                    AllDayEventCard(event = event, onClick = { onEditEvent(event) })
+                }
+            }
+
+            if (visibleTimelineItems.isNotEmpty()) {
+                items(
+                    items = visibleTimelineItems,
+                    key = { item ->
+                        when (item) {
+                            is ScheduleTimelineItem.Lesson -> "cal_lesson_${item.details.slot.id}"
+                            is ScheduleTimelineItem.BreakWindow -> "cal_break_${item.startTime}_${item.endTime}"
+                            is ScheduleTimelineItem.TimedEvent -> "cal_event_${item.event.id}"
+                        }
+                    }
+                ) { item ->
+                    when (item) {
+                        is ScheduleTimelineItem.Lesson -> {
+                            LessonSlotCard(
+                                details = item.details,
+                                cardStyle = uiState.preferences.cardStyle,
+                                cardDensity = uiState.preferences.cardDensity,
+                                cornerRadiusDp = uiState.preferences.cornerRadiusDp,
+                                showProgressBar = uiState.preferences.showProgressBar,
+                                isTwoWeekCycleEnabled = uiState.preferences.isTwoWeekCycleEnabled,
+                                isToday = uiState.selectedDate == LocalDate.now(),
+                                slotGrade = item.details.slot.gradeForDate(uiState.selectedDate),
+                                onCardClick = { onEditSlot(item.details.slot.id, uiState.selectedDate.toString()) },
+                                onAddTaskClick = {
+                                    onAddNewTaskForSlot(item.details.activity.id, item.details.slot.id, uiState.selectedDate)
+                                },
+                                onTaskToggle = { viewModel.toggleTask(it) },
+                                onTaskClick = onEditTask,
+                                onStartFocusTimer = { onStartFocusTimer(item.details.activity.name) },
+                                onStartInteractiveSession = onStartInteractiveSession?.let { cb ->
+                                    { cb(item.details.slot.id) }
+                                }
                             )
                         }
+                        is ScheduleTimelineItem.BreakWindow -> BreakWindowCard(breakWindow = item)
+                        is ScheduleTimelineItem.TimedEvent -> TimedEventCard(
+                            event = item.event,
+                            onClick = { onEditEvent(item.event) }
+                        )
+                    }
+                }
+            }
+
+            if (daySchedule != null && daySchedule.unassignedTasks.isNotEmpty()) {
+                item(key = "cal_unassigned_header") {
+                    Text(
+                        text = "ЗАДАЧИ НА ДЕНЬ",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = iosColors.textSecondary,
+                        modifier = Modifier.padding(top = 6.dp, start = 4.dp)
+                    )
+                }
+                items(daySchedule.unassignedTasks, key = { "cal_unassigned_${it.id}" }) { task ->
+                    TaskItemRow(
+                        task = task,
+                        linkedActivity = task.linkedActivityId?.let { activityMap[it] },
+                        onToggleCompleted = { viewModel.toggleTask(task) },
+                        onClick = { onEditTask(task) },
+                        onFocusTimerClick = { onStartFocusTimer(task.title) },
+                        onPostponeTomorrowClick = { viewModel.postponeTaskToTomorrow(task) },
+                        onDeleteClick = { viewModel.deleteTask(task.id) },
+                        onToggleSubtask = { subId -> viewModel.toggleSubtask(task, subId) }
+                    )
+                }
+            }
+
+            if (daySchedule != null &&
+                visibleTimelineItems.isEmpty() &&
+                daySchedule.allDayEvents.isEmpty() &&
+                daySchedule.unassignedTasks.isEmpty()
+            ) {
+                item(key = "cal_empty") {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "На этот день событий и ${appProfile.pluralGenitive} нет",
+                            fontSize = 14.sp,
+                            color = iosColors.textSecondary,
+                            textAlign = TextAlign.Center
+                        )
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun TodayPillButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(IosBlue.copy(alpha = 0.14f))
+            .border(BorderStroke(0.8.dp, IosBlue.copy(alpha = 0.35f)), RoundedCornerShape(10.dp))
+            .clickable { onClick() }
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+    ) {
+        Text(
+            text = "Сегодня",
+            fontSize = 11.5.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = IosBlue
+        )
     }
 }
 

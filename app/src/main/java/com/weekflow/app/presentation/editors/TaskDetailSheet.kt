@@ -839,6 +839,26 @@ internal fun TaskAttachmentsSection(
                         color = iosColors.textSecondary
                     )
                 }
+                if (isImage) {
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .clickable {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                TaskAttachmentHelper.copyImageToClipboard(context, att)
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.ContentCopy,
+                            contentDescription = "Копировать фото",
+                            tint = IosBlue,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(2.dp))
+                }
                 Box(
                     modifier = Modifier
                         .size(26.dp)
@@ -923,6 +943,8 @@ internal fun InAppImageViewerDialog(
             decorFitsSystemWindows = false
         )
     ) {
+        val context = LocalContext.current
+        val haptic = LocalHapticFeedback.current
         var bitmap by remember(attachment.localPath) { mutableStateOf<ImageBitmap?>(null) }
         var isLoading by remember(attachment.localPath) { mutableStateOf(true) }
         var showChrome by remember(attachment.localPath) { mutableStateOf(true) }
@@ -1065,6 +1087,25 @@ internal fun InAppImageViewerDialog(
                             fontSize = 12.sp,
                             color = Color.White.copy(alpha = 0.72f),
                             maxLines = 1
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.14f))
+                            .clickable {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                TaskAttachmentHelper.copyImageToClipboard(context, attachment)
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.ContentCopy,
+                            contentDescription = "Копировать фото",
+                            tint = Color.White,
+                            modifier = Modifier.size(19.dp)
                         )
                     }
 

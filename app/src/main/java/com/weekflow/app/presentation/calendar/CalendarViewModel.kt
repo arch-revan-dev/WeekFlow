@@ -8,6 +8,7 @@ import com.weekflow.app.domain.model.CalendarEvent
 import com.weekflow.app.domain.model.DayScheduleUiModel
 import com.weekflow.app.domain.model.RegularReminder
 import com.weekflow.app.domain.model.SchedulePreset
+import com.weekflow.app.domain.model.ScheduleViewMode
 import com.weekflow.app.domain.model.Slot
 import com.weekflow.app.domain.model.SubtaskItem
 import com.weekflow.app.domain.model.Task
@@ -24,13 +25,20 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.YearMonth
+import java.time.temporal.TemporalAdjusters
 import java.util.UUID
 
 data class CalendarUiState(
     val currentYearMonth: YearMonth = YearMonth.now(),
     val selectedDate: LocalDate = LocalDate.now(),
+    val weekDays: List<LocalDate> = emptyList(),
+    val weekEvents: List<CalendarEvent> = emptyList(),
+    val weekDayTaskCounts: Map<String, Int> = emptyMap(),
+    val isToday: Boolean = selectedDate == LocalDate.now(),
     val monthDays: List<CalendarDayUiModel> = emptyList(),
     val selectedDaySchedule: DayScheduleUiModel? = null,
     val preferences: UserPreferences = UserPreferences(),
@@ -116,9 +124,32 @@ class CalendarViewModel(
             vacations = vacations
         )
 
+        val monday = selectedDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+        val weekDays = (0..6).map { monday.plusDays(it.toLong()) }
+        val weekDateIsos = weekDays.map { it.toString() }.toSet()
+        val weekEvents = events
+            .filter { it.dateIso in weekDateIsos }
+            .sortedWith(
+                compareBy<CalendarEvent>(
+                    { it.dateIso },
+                    { !it.isAllDay },
+                    { it.parseStartTime() ?: LocalTime.MIN },
+                    { it.startTime ?: "" }
+                )
+            )
+        val weekDayTaskCounts = weekDays.mapNotNull { day ->
+            val dayIso = day.toString()
+            val pendingCount = tasks.count { it.dueDateIso == dayIso && !it.isCompleted }
+            if (pendingCount > 0) dayIso to pendingCount else null
+        }.toMap()
+
         CalendarUiState(
             currentYearMonth = ym,
             selectedDate = selectedDate,
+            weekDays = weekDays,
+            weekEvents = weekEvents,
+            weekDayTaskCounts = weekDayTaskCounts,
+            isToday = selectedDate == LocalDate.now(),
             monthDays = monthDays,
             selectedDaySchedule = selectedDaySchedule,
             preferences = preferences,
@@ -148,6 +179,63 @@ class CalendarViewModel(
 
     fun onNextMonth() {
         _currentYearMonth.value = _currentYearMonth.value.plusMonths(1)
+    }
+
+    fun setCalendarViewMode(mode: ScheduleViewMode) {
+        if (mode == ScheduleViewMode.WEEK_TABLE_GRID || mode == ScheduleViewMode.TIMELINE_GRID) {
+            val selectedYm = YearMonth.from(_selectedDate.value)
+            if (_currentYearMonth.value != selectedYm) {
+                _currentYearMonth.value = selectedYm
+            }
+        }
+        viewModelScope.launch {
+            preferencesRepository.updateCalendarViewMode(mode)
+        }
+    }
+
+    fun onPreviousWeek() {
+        val newDate = _selectedDate.value.minusWeeks(1)
+        _selectedDate.value = newDate
+        if (newDate.year != _currentYearMonth.value.year || newDate.monthValue != _currentYearMonth.value.monthValue) {
+            _currentYearMonth.value = YearMonth.of(newDate.year, newDate.monthValue)
+        }
+    }
+
+    fun onNextWeek() {
+        val newDate = _selectedDate.value.plusWeeks(1)
+        _selectedDate.value = newDate
+        if (newDate.year != _currentYearMonth.value.year || newDate.monthValue != _currentYearMonth.value.monthValue) {
+            _currentYearMonth.value = YearMonth.of(newDate.year, newDate.monthValue)
+        }
+    }
+
+    fun moveEvent(
+        event: CalendarEvent,
+        newDateIso: String,
+        newStartTime: String? = event.startTime,
+        newEndTime: String? = event.endTime,
+        newIsAllDay: Boolean = event.isAllDay
+    ) {
+        val resolvedStart = if (newIsAllDay) null else newStartTime
+        val resolvedEnd = if (newIsAllDay) null else newEndTime
+        if (event.dateIso == newDateIso &&
+            event.startTime == resolvedStart &&
+            event.endTime == resolvedEnd &&
+            event.isAllDay == newIsAllDay
+        ) return
+        viewModelScope.launch {
+            scheduleRepository.upsertEvent(
+                event.copy(
+                    dateIso = newDateIso,
+                    startTime = resolvedStart,
+                    endTime = resolvedEnd,
+                    isAllDay = newIsAllDay
+                )
+            )
+            try {
+                notificationScheduler?.rescheduleAllNotifications()
+            } catch (_: Exception) {}
+        }
     }
 
     fun goToToday() {

@@ -2,6 +2,9 @@ package com.weekflow.app.core.util
 
 import android.app.Activity
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipDescription
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -27,8 +30,87 @@ object TaskAttachmentHelper {
 
     private const val ATTACHMENTS_DIR = "attachments"
     private const val THUMBNAIL_CACHE_MAX_DIMENSION = 256
-    private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp", "gif", "bmp", "heic", "heif")
+    private val IMAGE_MIME_BY_EXTENSION = mapOf(
+        "jpg" to "image/jpeg",
+        "jpeg" to "image/jpeg",
+        "png" to "image/png",
+        "webp" to "image/webp",
+        "gif" to "image/gif",
+        "bmp" to "image/bmp",
+        "heic" to "image/heic",
+        "heif" to "image/heif"
+    )
+    private val EXTENSION_BY_IMAGE_MIME = mapOf(
+        "image/jpeg" to "jpg",
+        "image/jpg" to "jpg",
+        "image/png" to "png",
+        "image/webp" to "webp",
+        "image/gif" to "gif",
+        "image/bmp" to "bmp",
+        "image/heic" to "heic",
+        "image/heif" to "heif"
+    )
+    private val IMAGE_EXTENSIONS = IMAGE_MIME_BY_EXTENSION.keys
     private val thumbnailCache = LruCache<String, ImageBitmap>(48)
+
+    internal fun resolveImageMimeType(attachment: TaskAttachment): String {
+        val rawMime = attachment.mimeType.trim().lowercase(Locale.US)
+        if (rawMime.startsWith("image/") && rawMime != "image/*") {
+            return rawMime
+        }
+
+        val extFromName = extractLowercaseExtension(attachment.displayName)
+        IMAGE_MIME_BY_EXTENSION[extFromName]?.let { return it }
+
+        val extFromPath = extractLowercaseExtension(attachment.localPath)
+        IMAGE_MIME_BY_EXTENSION[extFromPath]?.let { return it }
+
+        return "image/*"
+    }
+
+    internal fun buildStorageFileName(displayName: String, mimeType: String?): String {
+        val sanitized = displayName
+            .trim()
+            .replace(Regex("[^A-Za-z0-9._-]"), "_")
+            .takeLast(80)
+            .ifBlank { "attachment" }
+
+        val lastDot = sanitized.lastIndexOf('.')
+        val hasValidExtension = lastDot > 0 && lastDot < sanitized.length - 1
+        if (hasValidExtension) {
+            val baseName = sanitized.substring(0, lastDot)
+            val ext = sanitized.substring(lastDot + 1)
+            val lowerExt = ext.lowercase(Locale.US)
+            return if (ext == lowerExt) sanitized else "$baseName.$lowerExt"
+        }
+
+        val resolvedExt = extensionFromMimeType(mimeType)
+        if (resolvedExt.isNullOrBlank()) {
+            return sanitized
+        }
+
+        val cleanBase = if (lastDot == sanitized.length - 1 && lastDot > 0) {
+            sanitized.dropLast(1)
+        } else {
+            sanitized
+        }
+        return "$cleanBase.$resolvedExt"
+    }
+
+    private fun extractLowercaseExtension(nameOrPath: String): String {
+        val fileName = nameOrPath.trim().substringAfterLast('/').substringAfterLast('\\')
+        val lastDot = fileName.lastIndexOf('.')
+        if (lastDot <= 0 || lastDot >= fileName.length - 1) return ""
+        return fileName.substring(lastDot + 1).lowercase(Locale.US)
+    }
+
+    private fun extensionFromMimeType(mimeType: String?): String? {
+        val normalized = mimeType?.trim()?.lowercase(Locale.US)?.takeIf { it.isNotBlank() } ?: return null
+        val fromAndroid = runCatching {
+            MimeTypeMap.getSingleton()?.getExtensionFromMimeType(normalized)
+        }.getOrNull()?.takeIf { it.isNotBlank() }
+        return (fromAndroid ?: EXTENSION_BY_IMAGE_MIME[normalized])?.lowercase(Locale.US)
+    }
 
     fun copyUriToInternalStorage(context: Context, uri: Uri): TaskAttachment? {
         return runCatching {
@@ -51,7 +133,7 @@ object TaskAttachmentHelper {
                 }
 
             val rawMimeType = resolver.getType(uri)
-            val fallbackExt = rawMimeType?.let { MimeTypeMap.getSingleton().getExtensionFromMimeType(it) }
+            val fallbackExt = extensionFromMimeType(rawMimeType)
             val displayName = originalName?.takeIf { it.isNotBlank() }
                 ?: buildString {
                     append("file_")
@@ -63,10 +145,12 @@ object TaskAttachmentHelper {
                 }
 
             val mimeType = rawMimeType?.takeIf { it.isNotBlank() }
-                ?: displayName.substringAfterLast('.', "")
-                    .lowercase(Locale.US)
+                ?: extractLowercaseExtension(displayName)
                     .takeIf { it.isNotBlank() }
-                    ?.let { MimeTypeMap.getSingleton().getMimeTypeFromExtension(it) }
+                    ?.let { ext ->
+                        IMAGE_MIME_BY_EXTENSION[ext]
+                            ?: runCatching { MimeTypeMap.getSingleton()?.getMimeTypeFromExtension(ext) }.getOrNull()
+                    }
                 ?: "application/octet-stream"
 
             val attachmentsDir = File(context.filesDir, ATTACHMENTS_DIR)
@@ -75,11 +159,8 @@ object TaskAttachmentHelper {
             }
 
             val attachmentId = UUID.randomUUID().toString()
-            val sanitizedName = displayName
-                .replace(Regex("[^A-Za-z0-9._-]"), "_")
-                .takeLast(80)
-                .ifBlank { "attachment" }
-            val destFile = File(attachmentsDir, "${attachmentId}_$sanitizedName")
+            val storageFileName = buildStorageFileName(displayName, mimeType)
+            val destFile = File(attachmentsDir, "${attachmentId}_$storageFileName")
 
             val inputStream = resolver.openInputStream(uri) ?: return null
             inputStream.use { input ->
@@ -130,15 +211,49 @@ object TaskAttachmentHelper {
     }
 
     fun isImageAttachment(attachment: TaskAttachment): Boolean {
-        if (attachment.mimeType.startsWith("image/", ignoreCase = true)) {
+        if (attachment.mimeType.trim().startsWith("image/", ignoreCase = true)) {
             return true
         }
-        val nameExt = attachment.displayName.substringAfterLast('.', "").lowercase(Locale.US)
+        val nameExt = extractLowercaseExtension(attachment.displayName)
         if (nameExt in IMAGE_EXTENSIONS) {
             return true
         }
-        val pathExt = attachment.localPath.substringAfterLast('.', "").lowercase(Locale.US)
+        val pathExt = extractLowercaseExtension(attachment.localPath)
         return pathExt in IMAGE_EXTENSIONS
+    }
+
+    fun copyImageToClipboard(context: Context, attachment: TaskAttachment): Boolean {
+        if (!isImageAttachment(attachment) || attachment.localPath.isBlank()) {
+            Toast.makeText(context, "Не удалось скопировать фото", Toast.LENGTH_SHORT).show()
+            return false
+        }
+
+        val file = File(attachment.localPath)
+        if (!file.exists() || !file.isFile) {
+            Toast.makeText(context, "Не удалось скопировать фото", Toast.LENGTH_SHORT).show()
+            return false
+        }
+
+        return try {
+            val contentUri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                ?: throw IllegalStateException("ClipboardManager unavailable")
+            val clipLabel = attachment.displayName.ifBlank { "Фото" }
+            val clipData = ClipData(
+                ClipDescription(clipLabel, arrayOf(resolveImageMimeType(attachment))),
+                ClipData.Item(contentUri)
+            )
+            clipboard.setPrimaryClip(clipData)
+            Toast.makeText(context, "Фото скопировано", Toast.LENGTH_SHORT).show()
+            true
+        } catch (_: Exception) {
+            Toast.makeText(context, "Не удалось скопировать фото", Toast.LENGTH_SHORT).show()
+            false
+        }
     }
 
     fun getCachedBitmap(localPath: String, maxDimensionPx: Int): ImageBitmap? {

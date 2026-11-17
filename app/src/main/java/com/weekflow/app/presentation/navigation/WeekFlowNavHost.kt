@@ -109,7 +109,12 @@ sealed interface ActiveSheet {
     data class AddTask(val activityId: String?, val slotId: String?, val date: LocalDate) : ActiveSheet
     data class ViewTask(val taskId: String, val fallbackTask: Task) : ActiveSheet
     data class EditTask(val task: Task) : ActiveSheet
-    data class AddEvent(val defaultDateIso: String) : ActiveSheet
+    data class AddEvent(
+        val dateIso: String,
+        val defaultStartTime: String? = null,
+        val defaultEndTime: String? = null,
+        val defaultIsAllDay: Boolean = false
+    ) : ActiveSheet
     data class EditEvent(val event: CalendarEvent) : ActiveSheet
     data object AddActivity : ActiveSheet
     data class EditActivity(val activityId: String) : ActiveSheet
@@ -316,6 +321,15 @@ fun WeekFlowNavHost(
                             onAddNewEvent = { dateIso ->
                                 returnSheetAfterActivity = null
                                 activeSheet = ActiveSheet.AddEvent(dateIso)
+                            },
+                            onAddNewEventWithTime = { dateIso, startTime, endTime, isAllDay ->
+                                returnSheetAfterActivity = null
+                                activeSheet = ActiveSheet.AddEvent(
+                                    dateIso = dateIso,
+                                    defaultStartTime = startTime,
+                                    defaultEndTime = endTime,
+                                    defaultIsAllDay = isAllDay
+                                )
                             },
                             onEditEvent = { event ->
                                 returnSheetAfterActivity = null
@@ -561,8 +575,11 @@ fun WeekFlowNavHost(
             is ActiveSheet.AddEvent -> {
                 EventEditorSheet(
                     initialEvent = null,
-                    defaultDateIso = sheet.defaultDateIso,
+                    defaultDateIso = sheet.dateIso,
                     presetId = currentPresetId,
+                    defaultStartTime = sheet.defaultStartTime,
+                    defaultEndTime = sheet.defaultEndTime,
+                    defaultIsAllDay = sheet.defaultIsAllDay,
                     onDismiss = { activeSheet = ActiveSheet.None },
                     onSave = { event ->
                         scope.launch {

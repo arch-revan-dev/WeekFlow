@@ -27,6 +27,7 @@ interface PreferencesRepository {
     suspend fun updateShowBreaks(show: Boolean)
     suspend fun updateShowProgressBar(show: Boolean)
     suspend fun updateScheduleViewMode(mode: ScheduleViewMode)
+    suspend fun updateCalendarViewMode(mode: ScheduleViewMode)
 
     suspend fun updateNotificationsEnabled(enabled: Boolean)
     suspend fun updateNotifyMinutesBefore(minutes: Int)

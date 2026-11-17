@@ -59,6 +59,7 @@ class UserPreferencesRepository(context: Context) : PreferencesRepository {
         val SHOW_BREAKS = booleanPreferencesKey("show_breaks")
         val SHOW_PROGRESS_BAR = booleanPreferencesKey("show_progress_bar")
         val SCHEDULE_VIEW_MODE = stringPreferencesKey("schedule_view_mode")
+        val CALENDAR_VIEW_MODE = stringPreferencesKey("calendar_view_mode")
 
         val NOTIFICATIONS_ENABLED = booleanPreferencesKey("notifications_enabled")
         val NOTIFY_MINUTES_BEFORE = intPreferencesKey("notify_minutes_before")
@@ -109,6 +110,9 @@ class UserPreferencesRepository(context: Context) : PreferencesRepository {
             val scheduleViewModeStr = preferences[PreferencesKeys.SCHEDULE_VIEW_MODE] ?: ScheduleViewMode.DAY_LIST.name
             val scheduleViewMode = try { ScheduleViewMode.valueOf(scheduleViewModeStr) } catch (_: Exception) { ScheduleViewMode.DAY_LIST }
 
+            val calendarViewModeStr = preferences[PreferencesKeys.CALENDAR_VIEW_MODE] ?: ScheduleViewMode.DAY_LIST.name
+            val calendarViewMode = try { ScheduleViewMode.valueOf(calendarViewModeStr) } catch (_: Exception) { ScheduleViewMode.DAY_LIST }
+
             val notificationsEnabled = preferences[PreferencesKeys.NOTIFICATIONS_ENABLED] ?: true
             val notifyMinutesBefore = preferences[PreferencesKeys.NOTIFY_MINUTES_BEFORE] ?: 10
             val eveningSummaryEnabled = preferences[PreferencesKeys.EVENING_SUMMARY_ENABLED] ?: true
@@ -140,6 +144,7 @@ class UserPreferencesRepository(context: Context) : PreferencesRepository {
                 showBreaks = showBreaks,
                 showProgressBar = showProgressBar,
                 scheduleViewMode = scheduleViewMode,
+                calendarViewMode = calendarViewMode,
                 notificationsEnabled = notificationsEnabled,
                 notifyMinutesBefore = notifyMinutesBefore,
                 eveningSummaryEnabled = eveningSummaryEnabled,
@@ -242,6 +247,12 @@ class UserPreferencesRepository(context: Context) : PreferencesRepository {
     override suspend fun updateScheduleViewMode(mode: ScheduleViewMode) {
         appContext.dataStore.edit { preferences ->
             preferences[PreferencesKeys.SCHEDULE_VIEW_MODE] = mode.name
+        }
+    }
+
+    override suspend fun updateCalendarViewMode(mode: ScheduleViewMode) {
+        appContext.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.CALENDAR_VIEW_MODE] = mode.name
         }
     }
 

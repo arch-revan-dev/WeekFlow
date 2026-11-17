@@ -63,19 +63,38 @@ fun EventEditorSheet(
     onSave: (CalendarEvent) -> Unit,
     onDelete: ((String) -> Unit)? = null,
     presetId: String = SchedulePreset.DEFAULT_ID,
+    defaultStartTime: String? = null,
+    defaultEndTime: String? = null,
+    defaultIsAllDay: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val iosColors = LocalIosColors.current
 
-    var title by remember(initialEvent?.id) { mutableStateOf(initialEvent?.title ?: "") }
-    var dateIso by remember(initialEvent?.id) { mutableStateOf(initialEvent?.dateIso ?: defaultDateIso) }
-    var isAllDay by remember(initialEvent?.id) { mutableStateOf(initialEvent?.isAllDay ?: false) }
-    var startTime by remember(initialEvent?.id) { mutableStateOf(initialEvent?.startTime ?: "10:00") }
-    var endTime by remember(initialEvent?.id) { mutableStateOf(initialEvent?.endTime ?: "11:30") }
-    var colorHex by remember(initialEvent?.id) { mutableStateOf(initialEvent?.colorHex ?: "#007AFF") }
-    var location by remember(initialEvent?.id) { mutableStateOf(initialEvent?.location ?: "") }
-    var description by remember(initialEvent?.id) { mutableStateOf(initialEvent?.description ?: "") }
+    var title by remember(initialEvent?.id, defaultDateIso, defaultStartTime, defaultEndTime, defaultIsAllDay) {
+        mutableStateOf(initialEvent?.title ?: "")
+    }
+    var dateIso by remember(initialEvent?.id, defaultDateIso, defaultStartTime, defaultEndTime, defaultIsAllDay) {
+        mutableStateOf(initialEvent?.dateIso ?: defaultDateIso)
+    }
+    var isAllDay by remember(initialEvent?.id, defaultDateIso, defaultStartTime, defaultEndTime, defaultIsAllDay) {
+        mutableStateOf(initialEvent?.isAllDay ?: defaultIsAllDay)
+    }
+    var startTime by remember(initialEvent?.id, defaultDateIso, defaultStartTime, defaultEndTime, defaultIsAllDay) {
+        mutableStateOf(initialEvent?.startTime ?: defaultStartTime ?: "10:00")
+    }
+    var endTime by remember(initialEvent?.id, defaultDateIso, defaultStartTime, defaultEndTime, defaultIsAllDay) {
+        mutableStateOf(initialEvent?.endTime ?: defaultEndTime ?: "11:30")
+    }
+    var colorHex by remember(initialEvent?.id, defaultDateIso, defaultStartTime, defaultEndTime, defaultIsAllDay) {
+        mutableStateOf(initialEvent?.colorHex ?: "#007AFF")
+    }
+    var location by remember(initialEvent?.id, defaultDateIso, defaultStartTime, defaultEndTime, defaultIsAllDay) {
+        mutableStateOf(initialEvent?.location ?: "")
+    }
+    var description by remember(initialEvent?.id, defaultDateIso, defaultStartTime, defaultEndTime, defaultIsAllDay) {
+        mutableStateOf(initialEvent?.description ?: "")
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,

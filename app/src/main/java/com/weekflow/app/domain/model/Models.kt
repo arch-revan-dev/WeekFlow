@@ -344,6 +344,7 @@ data class UserPreferences(
     val showBreaks: Boolean = true,
     val showProgressBar: Boolean = true,
     val scheduleViewMode: ScheduleViewMode = ScheduleViewMode.DAY_LIST,
+    val calendarViewMode: ScheduleViewMode = ScheduleViewMode.DAY_LIST,
     val notificationsEnabled: Boolean = true,
     val notifyMinutesBefore: Int = 10,
     val eveningSummaryEnabled: Boolean = true,
